@@ -290,7 +290,7 @@ done, archived, trashed or deleted, or has no due date.
 `GET /api/settings` → `PUT /api/settings` (the same object; unknown keys are kept, for client-specific settings):
 ```json
 { "timezone": "Europe/Berlin", "allDayTime": "09:00",
-  "ntfy": { "url": "https://push.mooned.de/jot-rasi-x7f3", "token": "" } }
+  "ntfy": { "url": "https://ntfy.example.com/jot-reminders-x7f3", "token": "" } }
 ```
 - `timezone`: an IANA name. Defaults to the server's zone. Clients offer "use this device's zone" (the browser's
   `Intl.DateTimeFormat().resolvedOptions().timeZone`).

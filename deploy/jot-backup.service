@@ -5,3 +5,4 @@ Description=Back up Jot to the storage box
 Type=oneshot
 ExecStart=%h/.local/bin/jot-backup
 Environment="JOT_DATA=%h/.local/share/jot"
+EnvironmentFile=%h/.config/jot-backup/env
