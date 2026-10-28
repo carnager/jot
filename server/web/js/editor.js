@@ -1,4 +1,5 @@
 // Right-side editor panel. Edits in place, saves on every keystroke.
+import { liveChecks } from './fieldmerge.js';
 import { h, icon, shortId, COLOR_NAMES, fill, labelColor, BOX_SVG, CHECK_SVG } from './util.js';
 import { store, isEmpty } from './store.js';
 import { ui, hooks } from './ui.js';
@@ -11,6 +12,7 @@ import { keyedFlip, flipAround, anim, after, reduced, EASE_IN } from './motion.j
 import { layoutGrids } from './views.js';
 import { ingest, imageFiles, imgEl, thumbWidth, ratio } from './images.js';
 import { openLightbox } from './lightbox.js';
+import { isDefaultAlerts, describeAlerts } from './alerts.js';
 
 let panel, id = null;
 let wasNonEmpty = false; // the open item had text when the editor opened
@@ -255,6 +257,9 @@ function renderChrome(it) {
       icon('calendar', 13), relDay(p.day) + (p.min != null ? ' ' + fmtTime(p.min, ui.settings.h12) : ''),
       it.remind === false ? icon('belloff', 12) : null));
     if (it.repeat) chips.push(h('button', { class: 'chip repeat', onclick: (e) => datePop([id], e.currentTarget) }, icon('repeat', 13), describeRepeat(it.repeat)));
+    if (it.remind !== false && !isDefaultAlerts(it.alerts)) {
+      chips.push(h('button', { class: 'chip', title: 'Alerts', onclick: (e) => datePop([id], e.currentTarget) }, icon('bell', 13), describeAlerts(it.alerts, p.min == null)));
+    }
     if (it.snoozedUntil) {
       const s = parseDue(it.snoozedUntil);
       if (s) chips.push(h('span', { class: 'chip time' }, icon('bell', 13), 'Snoozed to ' + relDay(s.day) + (s.min != null ? ' ' + fmtTime(s.min, ui.settings.h12) : '')));
@@ -354,7 +359,7 @@ function syncFromStore(it) {
 // ======================= checklist =======================
 
 function renderChecks(it, focusId = null, caret = null, instant = false) {
-  const checks = it.checks || [];
+  const checks = liveChecks(it);
   const open = checks.filter((c) => !c.done);
   const done = checks.filter((c) => c.done);
   const row = (c) => {
@@ -412,22 +417,22 @@ function setChecks(checks, focusId, caret) {
 
 function updateCheck(cid, patch) {
   const it = cur();
-  save({ checks: it.checks.map((c) => (c.id === cid ? { ...c, ...patch } : c)) });
+  save({ checks: liveChecks(it).map((c) => (c.id === cid ? { ...c, ...patch } : c)) });
 }
 
 function toggleCheck(cid) {
   const it = cur();
-  setChecks(it.checks.map((c) => (c.id === cid ? { ...c, done: !c.done } : c)));
+  setChecks(liveChecks(it).map((c) => (c.id === cid ? { ...c, done: !c.done } : c)));
 }
 
 function uncheckAll() {
   const it = cur();
-  setChecks(it.checks.map((c) => ({ ...c, done: false })));
+  setChecks(liveChecks(it).map((c) => ({ ...c, done: false })));
 }
 
 function addCheck(afterId, text = '') {
   const it = cur();
-  const checks = [...(it.checks || [])];
+  const checks = [...liveChecks(it)];
   const nc = { id: shortId(), text, done: false, indent: 0 };
   if (afterId) {
     const i = checks.findIndex((c) => c.id === afterId);
@@ -444,16 +449,16 @@ function addCheck(afterId, text = '') {
 
 function removeCheck(cid, focusPrev = false) {
   const it = cur();
-  const open = it.checks.filter((c) => !c.done);
+  const open = liveChecks(it).filter((c) => !c.done);
   const idx = open.findIndex((c) => c.id === cid);
   const prev = open[idx - 1] || open[idx + 1];
-  setChecks(it.checks.filter((c) => c.id !== cid), focusPrev && prev ? prev.id : null);
+  setChecks(liveChecks(it).filter((c) => c.id !== cid), focusPrev && prev ? prev.id : null);
   if (focusPrev && !prev) focusEnd(titleEl);
 }
 
 function moveCheck(fromId, beforeId) {
   const it = cur();
-  const checks = [...it.checks];
+  const checks = [...liveChecks(it)];
   const from = checks.findIndex((c) => c.id === fromId);
   const [m] = checks.splice(from, 1);
   const to = checks.findIndex((c) => c.id === beforeId);
@@ -465,7 +470,7 @@ function pasteLines(cid, ta, text) {
   const lines = text.split(/\r?\n/).map((l) => l.replace(/^\s*(?:[-*•]\s+|\[[ xX]?\]\s*)/, '')).filter((l) => l.trim());
   if (!lines.length) return;
   const it = cur();
-  const checks = [...it.checks];
+  const checks = [...liveChecks(it)];
   const i = checks.findIndex((c) => c.id === cid);
   const before = ta.value.slice(0, ta.selectionStart), after = ta.value.slice(ta.selectionEnd);
   checks[i] = { ...checks[i], text: before + lines[0] };
@@ -480,8 +485,8 @@ function checkKey(e, cid, ta) {
   if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
     e.preventDefault();
     // Keep the keyboard flow: focus whatever now sits where the toggled item was.
-    const c = it.checks.find((x) => x.id === cid);
-    const same = it.checks.filter((x) => x.done === c.done);
+    const c = liveChecks(it).find((x) => x.id === cid);
+    const same = liveChecks(it).filter((x) => x.done === c.done);
     const i = same.findIndex((x) => x.id === cid);
     const next = same[i + 1] || same[i - 1];
     toggleCheck(cid);
@@ -494,27 +499,27 @@ function checkKey(e, cid, ta) {
   if (e.key === 'Enter') {
     e.preventDefault();
     const before = ta.value.slice(0, ta.selectionStart), after = ta.value.slice(ta.selectionEnd);
-    if (!ta.value.trim() && (it.checks.find((c) => c.id === cid)?.indent)) {
+    if (!ta.value.trim() && (liveChecks(it).find((c) => c.id === cid)?.indent)) {
       // Enter on an empty indented item outdents it (like most editors).
       updateCheck(cid, { indent: 0 }); renderChecks(cur(), cid); return;
     }
-    const checks = it.checks.map((c) => (c.id === cid ? { ...c, text: before } : c));
+    const checks = liveChecks(it).map((c) => (c.id === cid ? { ...c, text: before } : c));
     save({ checks });
     addCheck(cid, after);
     return;
   }
   if (e.key === 'Backspace' && ta.selectionStart === 0 && ta.selectionEnd === 0) {
     e.preventDefault();
-    const c = it.checks.find((x) => x.id === cid);
+    const c = liveChecks(it).find((x) => x.id === cid);
     if (c.indent) { updateCheck(cid, { indent: 0 }); renderChecks(cur(), cid, 0); return; }
-    const open = it.checks.filter((x) => x.done === c.done);
+    const open = liveChecks(it).filter((x) => x.done === c.done);
     const idx = open.findIndex((x) => x.id === cid);
     const prev = open[idx - 1];
     if (!ta.value) { removeCheck(cid, true); return; }
     if (prev) {
       // merge into previous
       const caret = prev.text.length;
-      const checks = it.checks.filter((x) => x.id !== cid).map((x) => (x.id === prev.id ? { ...x, text: x.text + ta.value } : x));
+      const checks = liveChecks(it).filter((x) => x.id !== cid).map((x) => (x.id === prev.id ? { ...x, text: x.text + ta.value } : x));
       setChecks(checks, prev.id, caret);
     }
     return;
@@ -547,7 +552,7 @@ function checkKey(e, cid, ta) {
 
 function moveBy(cid, dir) {
   const it = cur();
-  const checks = [...it.checks];
+  const checks = [...liveChecks(it)];
   const i = checks.findIndex((c) => c.id === cid);
   let j = i + dir;
   while (checks[j] && checks[j].done !== checks[i].done) j += dir;
@@ -597,7 +602,7 @@ function snooze1h(ids) {
 
 function itemText(it) {
   const parts = [it.title];
-  if (it.kind === 'list') parts.push(...it.checks.map((c) => `${c.done ? '[x]' : '[ ]'} ${c.text}`));
+  if (it.kind === 'list') parts.push(...liveChecks(it).map((c) => `${c.done ? '[x]' : '[ ]'} ${c.text}`));
   else if (it.body) parts.push(it.body);
   return parts.filter(Boolean).join('\n');
 }

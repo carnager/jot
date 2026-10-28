@@ -45,5 +45,9 @@ for (const c of rp.cases) {
   check(`repeat ${c.name}`, got, want);
 }
 
+const { run: fieldmerge, runAlerts } = await import('./fieldmerge.mjs');
+await fieldmerge((name, got, want) => check('fieldmerge: ' + name, got, want));
+await runAlerts((name, got, want) => check(name, got, want));
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

@@ -1,4 +1,5 @@
 // Ctrl+K command palette: fuzzy over actions, views, labels and items.
+import { liveChecks } from './fieldmerge.js';
 import { h, icon, fuzzy, modKey, fill } from './util.js';
 import { store } from './store.js';
 import { allLabels } from './model.js';
@@ -89,16 +90,16 @@ export function openPalette(initial = '') {
       let scored;
       if (q) {
         scored = items.map((it) => {
-          const text = it.title || (it.kind === 'list' ? it.checks?.[0]?.text : (it.body || '').split('\n')[0]) || '';
+          const text = it.title || (it.kind === 'list' ? liveChecks(it)[0]?.text : (it.body || '').split('\n')[0]) || '';
           let s = fuzzy(q, text);
           if (s < 0) {
-            const body = it.kind === 'list' ? it.checks.map((c) => c.text).join(' ') : it.body;
+            const body = it.kind === 'list' ? liveChecks(it).map((c) => c.text).join(' ') : it.body;
             s = (body || '').toLowerCase().includes(q.toLowerCase()) ? 50 : -1;
           }
           return { it, text, score: s - (it.archived ? 30 : 0) - (it.done ? 30 : 0) };
         }).filter((x) => x.score >= 0).sort((a, b) => b.score - a.score).slice(0, 30);
       } else {
-        scored = items.sort((a, b) => b.updatedAt - a.updatedAt).slice(0, 8).map((it) => ({ it, text: it.title || (it.body || '').split('\n')[0] || it.checks?.[0]?.text || 'Untitled', score: 0 }));
+        scored = items.sort((a, b) => b.updatedAt - a.updatedAt).slice(0, 8).map((it) => ({ it, text: it.title || (it.body || '').split('\n')[0] || liveChecks(it)[0]?.text || 'Untitled', score: 0 }));
       }
       out.push(...scored.map(({ it, text }) => {
         const p = parseDue(it.due);

@@ -10,6 +10,7 @@ import {
 import * as act from './actions.js';
 import { ui } from './ui.js';
 import { fadeOut } from './motion.js';
+import { normAlerts, alertLabel, PRESETS_TIMED, PRESETS_ALLDAY } from './alerts.js';
 
 let current = null;
 
@@ -144,6 +145,7 @@ export function datePop(ids, anchor) {
     min: cur?.min ?? null,
     repeat: first.repeat ? structuredClone(first.repeat) : null,
     remind: first.remind !== false,
+    alerts: normAlerts(first.alerts),
   };
   let viewMonth = (() => { const d = fromDayNum(cur?.day ?? today); return { y: d.y, m: d.m }; })();
 
@@ -327,6 +329,7 @@ export function datePop(ids, anchor) {
     nav.onKey(e);
   });
   timeIn.addEventListener('change', () => {
+    queueMicrotask(renderAlerts);
     if (timeIn.value) {
       const [hh, mm] = timeIn.value.split(':').map(Number);
       draft.min = hh * 60 + mm;
@@ -339,7 +342,48 @@ export function datePop(ids, anchor) {
     remindBtn.classList.toggle('on', draft.remind);
     fill(remindBtn, icon(draft.remind ? 'bell' : 'belloff', 16));
     store.updateMany(ids, { remind: draft.remind });
+    renderAlerts();
   });
+
+  // ---- Alerts: multi-select presets, shown as compact chips ----
+  const alertsRow = h('div', { class: 'alerts-row' });
+  const alertsList = h('div', { class: 'alerts-presets', hidden: true });
+  function renderAlerts() {
+    const allDay = draft.min == null;
+    const chips = draft.remind
+      ? draft.alerts.map((m) => h('span', { class: 'alert-chip' }, alertLabel(m, allDay)))
+      : [h('span', { class: 'alert-chip off' }, 'Reminders off')];
+    fill(alertsRow,
+      icon('bell', 15),
+      h('button', {
+        class: 'alerts-btn', title: 'Choose when to be reminded', disabled: !draft.remind,
+        'aria-expanded': String(!alertsList.hidden),
+        onclick: () => { alertsList.hidden = !alertsList.hidden; renderAlerts(); },
+      }, h('span', { class: 'alert-chips' }, chips), icon('chevdown', 14)));
+    const presets = allDay ? PRESETS_ALLDAY : PRESETS_TIMED;
+    // Keep any non-preset values the item already has visible and removable.
+    const all = [...new Set([...presets, ...draft.alerts])].sort((a, b) => a - b);
+    fill(alertsList, all.map((m) => {
+      const on = draft.alerts.includes(m);
+      return h('button', {
+        class: ['alert-opt', on && 'on'], role: 'menuitemcheckbox', 'aria-checked': String(on),
+        onclick: () => {
+          const set = new Set(draft.alerts);
+          if (on) set.delete(m); else set.add(m);
+          draft.alerts = normAlerts([...set]);
+          store.updateMany(ids, { alerts: draft.alerts });
+          renderAlerts();
+        },
+      }, h('span', { class: ['mini-box', on && 'on'], html: BOX_SVG }), alertLabel(m, allDay));
+    }));
+    // Growing (presets opened) must not push the popover off-screen.
+    const pop = alertsRow.closest('.pop');
+    if (pop) {
+      // offsetHeight, not the bounding box: the pop may still be mid scale-in animation.
+      const top = parseFloat(pop.style.top) || 0, hgt = pop.offsetHeight;
+      if (top + hgt > innerHeight - 8) pop.style.top = Math.max(8, innerHeight - 8 - hgt) + 'px';
+    }
+  }
 
   const el = h('div', { class: 'pop date-pop' },
     input, hint,
@@ -347,8 +391,11 @@ export function datePop(ids, anchor) {
     h('div', { class: 'menu-sep' }),
     cal,
     h('div', { class: 'date-row' }, icon('clock', 15), timeIn, remindBtn),
+    alertsRow,
+    alertsList,
     h('div', { class: 'date-row' }, icon('repeat', 15), repeatSel),
     custom);
+  renderAlerts();
   renderCal();
   renderRepeat();
   renderHint();

@@ -1,4 +1,5 @@
 // Item actions. Every destructive or completing action goes through `withUndo`.
+import { liveChecks } from './fieldmerge.js';
 import { store } from './store.js';
 import { toast } from './toast.js';
 import { completeItem } from './repeat.js';
@@ -135,7 +136,7 @@ export function duplicate(id) {
   const { id: _id, rev: _rev, createdAt: _c, updatedAt: _u, sort: _s, ...rest } = structuredClone(it);
   const copy = newItem({
     ...rest,
-    checks: (it.checks || []).map(({ id: _cid, ...c }) => c),
+    checks: liveChecks(it).map(({ id: _cid, ...c }) => c),
     done: false, doneAt: 0, trashedAt: 0, archived: false,
   });
   store.put(copy);
@@ -161,7 +162,7 @@ export function convertKind(id) {
   const it = store.get(id);
   if (!it) return;
   if (it.kind === 'list') {
-    const body = (it.checks || []).map((c) => (c.done ? '[x] ' : '') + c.text).join('\n');
+    const body = liveChecks(it).map((c) => (c.done ? '[x] ' : '') + c.text).join('\n');
     store.update(id, { kind: 'note', body: [it.body, body].filter(Boolean).join('\n'), checks: [] });
   } else {
     const lines = (it.body || '').split('\n').filter((l) => l.trim());

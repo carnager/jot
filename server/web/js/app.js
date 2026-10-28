@@ -1,4 +1,5 @@
 // Jot web app entry: boot, routing, keyboard model, selection, drag & drop, login, settings, reminders.
+import { liveChecks } from './fieldmerge.js';
 import { h, icon, lsGet, lsSet, modKey, fill, BRAND } from './util.js';
 import { store } from './store.js';
 import { ui, hooks, targets } from './ui.js';
@@ -8,6 +9,8 @@ import {
 } from './views.js';
 import { mountCapture, focusCapture, refreshCapture, newBlank, createImageNote } from './capture.js';
 import { openLightbox, lightboxOpen } from './lightbox.js';
+import { fireTimes, leadText } from './alerts.js';
+import { serverSettings, loadSettings, saveSettings as saveServerSettings, ntfyTest, deviceZone, zoneList } from './settings.js';
 import { ingest, resumeUploads } from './images.js';
 import { mountEditor, openEditor, closeEditor, itemMenu, editorHasFocus } from './editor.js';
 import { datePop, labelPop, colorPop, closePop, popOpen, anchorFor, promptPop } from './popovers.js';
@@ -21,6 +24,7 @@ import { reduced as reducedMotion, closeLayer, fadeOut, burst } from './motion.j
 // ======================= settings / theme =======================
 
 Object.assign(ui.settings, lsGet('jot.settings', {}));
+if (serverSettings().allDayTime) ui.settings.allDayTime = serverSettings().allDayTime; // §2c: synced value wins
 const saveSettings = () => lsSet('jot.settings', ui.settings);
 
 function applyTheme() {
@@ -76,6 +80,7 @@ function fixCursor() {
 function parseHash() {
   const m = /^#\/(\w+)(?:\/(.+))?$/.exec(location.hash);
   if (!m) return null;
+  if (m[1] === 'item' && m[2]) return { type: 'item', id: decodeURIComponent(m[2]) };
   if (m[1] === 'label' && m[2]) return { type: 'label', label: decodeURIComponent(m[2]) };
   if (VIEWS[m[1]]) return { type: m[1] };
   return null;
@@ -104,8 +109,40 @@ function go(v, { push = true } = {}) {
 
 window.addEventListener('popstate', () => {
   const v = parseHash();
-  if (v) go(v, { push: false });
+  if (v?.type === 'item') openFromLink(v.id);
+  else if (v) go(v, { push: false });
 });
+
+/** The view an item naturally lives in. */
+function viewFor(it) {
+  const p = parseDue(it.due);
+  const t = todayNum();
+  if (it.trashedAt) return { type: 'trash' };
+  if (it.done) return { type: 'done' };
+  if (it.archived) return { type: 'archive' };
+  if (p && p.day <= t) return { type: 'today' };
+  if (p) return { type: 'upcoming' };
+  return { type: 'notes' };
+}
+
+/** #/item/<id> (ntfy click URLs): open the item in the editor, in a view that shows it. */
+function openFromLink(id) {
+  const open = () => {
+    const it = store.get(id);
+    if (!it || it.deleted) { go(lsGet('jot.lastView', null) || { type: 'notes' }, { push: false }); history.replaceState(null, '', hashOf(ui.view)); toast('That item no longer exists'); return true; }
+    go(viewFor(it), { push: false });
+    history.replaceState(null, '', hashOf(ui.view));
+    ui.cursor = id;
+    renderNow();
+    openEditor(id, null);
+    requestAnimationFrame(() => scrollCursorIntoView());
+    return true;
+  };
+  if (store.get(id)) { open(); return; }
+  // Not here yet (fresh device, or the link came before the sync): wait for the next sync.
+  const off = store.on('synced', () => { off(); open(); });
+  store.sync();
+}
 
 /** Upcoming: show only one day (null = all days). */
 function selectDay(day) {
@@ -444,7 +481,7 @@ function onViewClick(e) {
       case 'image': openLightbox(store.get(id)?.images, +actEl.dataset.index || 0, actEl); break;
       case 'check': {
         const cid = actEl.dataset.check;
-        store.update(id, (it) => ({ checks: it.checks.map((c) => (c.id === cid ? { ...c, done: !c.done } : c)) }));
+        store.update(id, (it) => ({ checks: liveChecks(it).map((c) => (c.id === cid ? { ...c, done: !c.done } : c)) }));
         break;
       }
     }
@@ -664,25 +701,25 @@ function checkReminders() {
   const seen = new Set(lsGet(NOTIFIED_KEY, []));
   let changed = false;
   for (const it of store.all()) {
-    if (it.remind === false || it.done || it.archived || it.trashedAt || !it.due) continue;
-    const fireStr = it.snoozedUntil || it.due;
-    const at = dueToDate(fireStr, allDayMin);
-    if (!at) continue;
-    const t = at.getTime();
-    if (t > now || t < now - 60 * 60000) continue;
-    const key = `${it.id}|${fireStr}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
-    changed = true;
-    const body = it.kind === 'list'
-      ? it.checks.filter((c) => !c.done).slice(0, 4).map((c) => '☐ ' + c.text).join('\n')
-      : (it.body || '').slice(0, 140);
-    try {
-      const n = new Notification(it.title || body.split('\n')[0] || 'Reminder', {
-        body: it.title ? body : '', tag: it.id, icon: '/icon.svg', renotify: true,
-      });
-      n.onclick = () => { window.focus(); reveal(it.id); n.close(); };
-    } catch { /* some browsers only allow notifications from a service worker */ }
+    for (const f of fireTimes(it, allDayMin)) {
+      const t = f.at.getTime();
+      if (t > now || t < now - 60 * 60000) continue;
+      const key = `${it.id}|${t}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      changed = true;
+      const preview = it.kind === 'list'
+        ? liveChecks(it).filter((c) => !c.done).slice(0, 4).map((c) => '☐ ' + c.text).join('\n')
+        : (it.body || '').slice(0, 140);
+      // An early alert says how far away the item is ("in 30 min", "tomorrow 09:00").
+      const lead = f.m ? leadText(new Date(t + f.m * 60000)) : '';
+      const title = it.title || preview.split('\n')[0] || 'Reminder';
+      const body = [lead && lead[0].toUpperCase() + lead.slice(1), it.title ? preview : ''].filter(Boolean).join('\n');
+      try {
+        const n = new Notification(title, { body, tag: `${it.id}|${t}`, icon: '/icon.svg', renotify: true });
+        n.onclick = () => { window.focus(); reveal(it.id); n.close(); };
+      } catch { /* some browsers only allow notifications from a service worker */ }
+    }
   }
   if (changed) lsSet(NOTIFIED_KEY, [...seen].slice(-500));
 }
@@ -734,6 +771,70 @@ function showKeys() {
     )), { width: 720 });
 }
 
+/** Settings → Reminders (§2c): synced with the server, so every device and the ntfy push agree. */
+function remindersSection() {
+  const set = serverSettings();
+  const msg = h('div', { class: 'set-msg', 'aria-live': 'polite' });
+  const say = (text, kind = '') => { msg.className = 'set-msg ' + kind; msg.textContent = text; };
+  const save = async (patch, okText = 'Saved') => {
+    say('Saving…');
+    const r = await saveServerSettings(patch);
+    say(r.ok ? okText : r.error, r.ok ? 'ok' : 'err');
+    return r;
+  };
+  const time = h('input', {
+    type: 'time', class: 'field', value: set.allDayTime || ui.settings.allDayTime || '09:00',
+    onchange: (e) => save({ allDayTime: e.target.value || '09:00' }).then(() => { ui.settings.allDayTime = serverSettings().allDayTime || ui.settings.allDayTime; render(); }),
+  });
+  const zones = zoneList();
+  const tz = h('input', {
+    class: 'field tz', value: set.timezone || '', placeholder: deviceZone() || 'Europe/Berlin', list: 'tz-list', spellcheck: 'false',
+    onchange: (e) => e.target.value.trim() && save({ timezone: e.target.value.trim() }),
+  });
+  const dz = deviceZone();
+  const useDevice = h('button', {
+    class: 'btn sm', title: 'Use the time zone of this browser',
+    onclick: () => { tz.value = dz; save({ timezone: dz }, `Time zone set to ${dz}`); },
+  }, 'Use this device’s zone');
+  const url = h('input', {
+    class: 'field wide', type: 'url', value: set.ntfy?.url || '', placeholder: 'https://ntfy.sh/your-secret-topic', spellcheck: 'false',
+    onchange: (e) => save({ ntfy: { url: e.target.value.trim() } }, e.target.value.trim() ? 'ntfy topic saved' : 'ntfy push turned off'),
+  });
+  const token = h('input', {
+    class: 'field wide', type: 'password', value: set.ntfy?.token || '', placeholder: 'Access token (optional)', autocomplete: 'off',
+    onchange: (e) => save({ ntfy: { token: e.target.value.trim() } }),
+  });
+  const test = h('button', {
+    class: 'btn sm',
+    onclick: async () => {
+      if (url.value.trim() !== (serverSettings().ntfy?.url || '')) {
+        const r = await save({ ntfy: { url: url.value.trim(), token: token.value.trim() } });
+        if (!r.ok) return;
+      }
+      test.disabled = true;
+      say('Sending a test message…');
+      const r = await ntfyTest();
+      test.disabled = false;
+      say(r.ok ? 'Test sent. Check your ntfy app.' : `Test failed: ${r.error}`, r.ok ? 'ok' : 'err');
+    },
+  }, icon('bell', 14), 'Send test');
+  return h('div', { class: 'settings-group' },
+    h('div', { class: 'settings-h' }, 'Reminders'),
+    h('div', { class: 'settings-row' },
+      h('div', null, h('div', { class: 't' }, 'All-day reminder time'), h('div', { class: 'd' }, 'When items without a time remind you. Shared by all devices.')),
+      time),
+    h('div', { class: 'settings-row' },
+      h('div', null, h('div', { class: 't' }, 'Time zone'), h('div', { class: 'd' }, 'Used for push reminders from the server.')),
+      h('div', { class: 'row-ctl' }, tz, dz && dz !== set.timezone ? useDevice : null,
+        zones.length ? h('datalist', { id: 'tz-list' }, zones.map((z) => h('option', { value: z }))) : null)),
+    h('div', { class: 'settings-row col' },
+      h('div', null,
+        h('div', { class: 't' }, 'Push via ntfy'),
+        h('div', { class: 'd' }, 'The server sends every reminder to this ntfy topic, with Done and Snooze buttons. Good for desktops and devices without Jot.'),
+        h('div', { class: 'd warn' }, icon('bell', 12), 'Don’t subscribe on the phone that has the Jot app, or you’ll get every reminder twice.')),
+      h('div', { class: 'ntfy-ctl' }, url, token, h('div', { class: 'ntfy-actions' }, test, msg))));
+}
+
 function settings() {
   const s = ui.settings;
   const seg = (key, opts) => h('div', { class: 'seg' }, opts.map(([v, label]) => h('button', {
@@ -760,11 +861,11 @@ function settings() {
       settings();
     },
   }, s.notifications && perm === 'granted' ? 'Turn off' : 'Enable');
-  const timeIn = h('input', { type: 'time', class: 'field', value: s.allDayTime || '09:00', onchange: (e) => { s.allDayTime = e.target.value || '09:00'; saveSettings(); } });
+  const rem = remindersSection();
   const last = store.lastSyncAt ? new Date(store.lastSyncAt).toLocaleTimeString() : 'never';
   modal(h('div', { class: 'modal-body' },
     h('h2', null, 'Settings'),
-    h('p', { class: 'lead' }, 'Stored in this browser.'),
+    h('p', { class: 'lead' }, 'Appearance is stored in this browser. Reminders are shared by all your devices.'),
     h('div', { class: 'settings-row' },
       h('div', null, h('div', { class: 't' }, 'Theme')),
       seg('theme', [['system', 'System'], ['light', 'Light'], ['dark', 'Dark']])),
@@ -785,9 +886,7 @@ function settings() {
       h('div', null, h('div', { class: 't' }, 'Desktop notifications'),
         h('div', { class: 'd' }, perm === 'unsupported' ? 'Not supported by this browser.' : 'Reminders pop up while a Jot tab is open. Your phone handles them otherwise.')),
       perm === 'unsupported' ? null : notifBtn),
-    h('div', { class: 'settings-row' },
-      h('div', null, h('div', { class: 't' }, 'All-day reminder time'), h('div', { class: 'd' }, 'When to remind about items without a time.')),
-      timeIn),
+    rem,
     h('div', { class: 'settings-row' },
       h('div', null, h('div', { class: 't' }, 'Sync'), h('div', { class: 'd' }, `Last synced ${last}${store.dirty.size ? ` · ${store.dirty.size} pending` : ''}`)),
       h('button', { class: 'btn sm', onclick: () => store.sync().then(settings) }, icon('refresh', 14), 'Sync now')),
@@ -910,10 +1009,14 @@ function start() {
     setInterval(() => { checkReminders(); render(); }, 30000);
     setInterval(() => { if (document.visibilityState === 'visible') store.sync(); }, 5 * 60000);
   }
-  const v = parseHash() || lsGet('jot.lastView', null) || { type: 'notes' };
+  const fromHash = parseHash();
+  const link = fromHash?.type === 'item' ? fromHash.id : null;
+  const v = (link ? null : fromHash) || lsGet('jot.lastView', null) || { type: 'notes' };
   ui.view = VIEWS[v.type] || v.type === 'label' ? v : { type: 'notes' };
-  if (!parseHash()) history.replaceState(null, '', hashOf(ui.view));
+  if (!fromHash || link) history.replaceState(null, '', hashOf(ui.view));
   renderNow();
+  if (link) openFromLink(link);
+  loadSettings().then(() => render());
   store.sync();
   store.startEvents();
   resumeUploads();

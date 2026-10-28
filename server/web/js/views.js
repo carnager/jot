@@ -1,4 +1,5 @@
 // Rendering of sidebar, header and the main view (cards grid / task lists).
+import { liveChecks } from './fieldmerge.js';
 import { h, icon, linkify, modKey, fill, labelColor, BRAND, BOX_SVG, CHECK_SVG } from './util.js';
 import { store } from './store.js';
 import { ui, hooks, viewKey } from './ui.js';
@@ -12,6 +13,7 @@ import {
 import * as act from './actions.js';
 import { keyedFlip, fadeIn, bump, measure, reduced, anim } from './motion.js';
 import { ART } from './art.js';
+import { isDefaultAlerts, describeAlerts } from './alerts.js';
 import { cardImages, rowThumb } from './images.js';
 
 const VIEWS = {
@@ -292,6 +294,10 @@ export function renderStatus() {
 // ======================= item pieces =======================
 
 
+/** Has more alerts than the default "on time"? Rows and cards then show a small bell. */
+const extraAlerts = (it) => it.remind !== false && !isDefaultAlerts(it.alerts);
+const alertTitle = (it, p) => (it.remind === false ? 'Reminders off' : 'Alerts: ' + describeAlerts(it.alerts, p.min == null));
+
 function checkButton(it) {
   const over = !it.done && it.due && isOverdue(it.due);
   return h('button', {
@@ -319,11 +325,11 @@ function dueChip(it) {
   if (p.min != null) text = (isToday ? '' : text + ' ') + fmtTime(p.min, ui.settings.h12);
   return h('span', { class: ['mchip', over ? 'overdue' : isToday ? 'today' : 'date'], title: it.repeat ? describeRepeat(it.repeat) : '' },
     icon(it.repeat ? 'repeat' : p.min != null ? 'clock' : 'calendar', 12), text,
-    it.remind === false ? icon('belloff', 11) : null);
+    it.remind === false ? icon('belloff', 11) : extraAlerts(it) ? icon('bell', 11) : null);
 }
 
 function checksPreview(it, max = 6) {
-  const checks = it.checks || [];
+  const checks = liveChecks(it);
   const open = checks.filter((c) => !c.done);
   const done = checks.length - open.length;
   const shown = open.slice(0, max);
@@ -368,7 +374,7 @@ function buildCard(it) {
     ];
   const meta = [dueChip(it), it.labels?.map((l) => labelChip(l))].flat().filter(Boolean);
   return h('div', {
-    class: ['card', it.pinned && 'pinned', it.images?.length && 'has-images', it.images?.length && !it.title && !it.body && !(it.checks || []).length && 'only-images'],
+    class: ['card', it.pinned && 'pinned', it.images?.length && 'has-images', it.images?.length && !it.title && !it.body && !liveChecks(it).length && 'only-images'],
     'data-id': it.id,
     'data-k': it.id,
     'data-color': it.color || null,
@@ -380,7 +386,7 @@ function buildCard(it) {
     ? h('div', { class: 'card-task' }, checkButton(it), titleEl)
     : titleEl,
   cardBody(it),
-  !it.title && !it.body && !(it.checks || []).length && !(it.images || []).length ? h('div', { class: 'card-body short empty-note' }, 'Empty note') : null,
+  !it.title && !it.body && !liveChecks(it).length && !(it.images || []).length ? h('div', { class: 'card-body short empty-note' }, 'Empty note') : null,
   meta.length ? h('div', { class: 'card-meta' }, meta) : null,
   h('div', { class: 'card-tools' }, tools));
 }
@@ -396,16 +402,18 @@ function buildRow(it, { showDate = false } = {}) {
     let txt = '';
     if (showDate || over) txt = relDay(p.day);
     if (p.min != null) txt += (txt ? ' · ' : '') + fmtTime(p.min, ui.settings.h12);
-    chips.push(h('span', { class: ['mchip', over ? 'overdue' : 'time'] }, icon(p.min != null ? 'clock' : 'calendar', 12), txt));
+    chips.push(h('span', { class: ['mchip', over ? 'overdue' : 'time'], title: alertTitle(it, p) }, icon(p.min != null ? 'clock' : 'calendar', 12), txt, extraAlerts(it) ? icon('bell', 11) : null));
+  } else if (p && extraAlerts(it)) {
+    chips.push(h('span', { class: 'mchip time', title: alertTitle(it, p) }, icon('bell', 11)));
   }
   if (it.repeat) chips.push(h('span', { class: 'mchip repeat', title: describeRepeat(it.repeat) }, icon('repeat', 12), describeRepeat(it.repeat)));
   if (it.snoozedUntil) {
     const s = parseDue(it.snoozedUntil);
     if (s) chips.push(h('span', { class: 'mchip snooze' }, icon('bell', 12), 'Snoozed · ' + relDay(s.day) + (s.min != null ? ' ' + fmtTime(s.min, ui.settings.h12) : '')));
   }
-  if (it.kind === 'list' && it.checks?.length) {
-    const d = it.checks.filter((c) => c.done).length;
-    chips.push(h('span', { class: 'mchip' }, icon('list', 12), `${d}/${it.checks.length}`));
+  if (it.kind === 'list' && liveChecks(it).length) {
+    const d = liveChecks(it).filter((c) => c.done).length;
+    chips.push(h('span', { class: 'mchip' }, icon('list', 12), `${d}/${liveChecks(it).length}`));
   }
   for (const l of it.labels || []) chips.push(labelChip(l));
   if (it.done && it.doneAt) chips.push(h('span', { class: 'mchip' }, icon('done', 12), 'Done ' + relDay(todayNum(new Date(it.doneAt))).toLowerCase()));
@@ -426,7 +434,7 @@ function buildRow(it, { showDate = false } = {}) {
 }
 
 function firstLine(it) {
-  if (it.kind === 'list') return it.checks?.[0]?.text || '';
+  if (it.kind === 'list') return liveChecks(it)[0]?.text || '';
   return (it.body || '').split('\n').find((l) => l.trim()) || '';
 }
 

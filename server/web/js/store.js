@@ -1,5 +1,6 @@
 // Item store with offline cache and sync (SPEC §2).
 import { lsGet, lsSet } from './util.js';
+import { stamp } from './fieldmerge.js';
 
 const CACHE_KEY = 'jot.cache.v1';
 
@@ -92,7 +93,8 @@ class Store {
   put(item, { silent = false } = {}) {
     const prev = this.items.get(item.id);
     const now = Date.now();
-    const next = { ...item, updatedAt: Math.max(now, (prev?.updatedAt || 0) + 1) };
+    // §2b: record which field groups changed (fm), stamp checks (u) and keep check tombstones.
+    const next = { ...stamp(this.drafts.has(item.id) ? null : prev, item, now), updatedAt: Math.max(now, (prev?.updatedAt || 0) + 1) };
     if (this.drafts.has(item.id)) {
       if (isEmpty(next) && !next.deleted) {
         // Still nothing typed: keep it in memory only.

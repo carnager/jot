@@ -81,6 +81,6 @@ export function completeItem(item, now, nowMs = Date.now()) {
     snoozedUntil: '',
     done: false,
     doneAt: nowMs,
-    checks: (item.checks || []).map((c) => ({ ...c, done: false })),
+    checks: (item.checks || []).map((c) => (c.deleted ? c : { ...c, done: false })),
   };
 }

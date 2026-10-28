@@ -1,4 +1,5 @@
 // View queries and item helpers (SPEC §1).
+import { liveChecks, pruneTombstones } from './fieldmerge.js';
 import { store, isEmpty } from './store.js';
 import { parseDue, todayNum, nowString, isOverdue } from './dates.js';
 import { ulid, shortId, norm } from './util.js';
@@ -83,7 +84,7 @@ export function searchItems(q) {
   if (!terms.length) return [];
   return store.all().filter((it) => {
     if (it.trashedAt) return false;
-    const hay = norm([it.title, it.body, ...(it.checks || []).map((c) => c.text), ...(it.labels || []).map((l) => '#' + l + ' ' + l)].join('\n'));
+    const hay = norm([it.title, it.body, ...liveChecks(it).map((c) => c.text), ...(it.labels || []).map((l) => '#' + l + ' ' + l)].join('\n'));
     return terms.every((t) => hay.includes(t));
   }).sort((a, b) => (a.archived - b.archived) || (a.done - b.done) || (b.pinned - a.pinned) || bySortDesc(a, b));
 }
@@ -126,6 +127,9 @@ export function purgeTrash() {
   const cutoff = Date.now() - 30 * 86400000;
   const old = store.all().filter((it) => it.trashedAt && it.trashedAt < cutoff);
   if (old.length) store.updateMany(old.map((i) => i.id), { deleted: true });
+  // Check tombstones older than 30 days are dropped (§2b); stamp() removes them on write.
+  const stale = store.all().filter((it) => pruneTombstones(it));
+  if (stale.length) store.updateMany(stale.map((i) => i.id), (it) => ({ checks: pruneTombstones(it) }));
 }
 
 export { nowString };
