@@ -1,4 +1,4 @@
-.PHONY: server test web-test android android-release run deploy
+.PHONY: server test web-test android android-release run deploy backup-install
 
 server:
 	cd server && CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o ../bin/jot .
@@ -23,3 +23,11 @@ run: server
 deploy: server
 	scp -q bin/jot proteus:.local/bin/jot.new
 	ssh proteus 'mv ~/.local/bin/jot.new ~/.local/bin/jot && systemctl --user restart jot && systemctl --user is-active jot'
+
+# Nightly restic backup of ~/.local/share/jot to sftp:scorpia:Backup/Jot/restic (03:15).
+# Creates the restic password on proteus once; keep a copy of it somewhere safe.
+backup-install:
+	ssh proteus 'mkdir -p ~/.config/jot-backup && chmod 700 ~/.config/jot-backup && { [ -f ~/.config/jot-backup/restic-password ] || (umask 077; head -c 32 /dev/urandom | base64 > ~/.config/jot-backup/restic-password); }'
+	scp -q deploy/backup.sh proteus:.local/bin/jot-backup
+	scp -q deploy/jot-backup.service deploy/jot-backup.timer proteus:.config/systemd/user/
+	ssh proteus 'systemctl --user daemon-reload && systemctl --user start jot-backup.service && journalctl --user -u jot-backup -n 3 --no-pager -o cat && systemctl --user enable --now jot-backup.timer'

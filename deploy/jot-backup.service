@@ -1,0 +1,7 @@
+[Unit]
+Description=Back up Jot to the storage box
+
+[Service]
+Type=oneshot
+ExecStart=%h/.local/bin/jot-backup
+Environment="JOT_DATA=%h/.local/share/jot"
