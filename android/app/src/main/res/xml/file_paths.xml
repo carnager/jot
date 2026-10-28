@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths>
+    <!-- Camera captures, downloaded originals to share, and this device's own images. -->
+    <cache-path name="camera" path="camera/" />
+    <cache-path name="shared" path="shared/" />
+    <files-path name="pending" path="pending/" />
+    <files-path name="images" path="images/" />
+</paths>

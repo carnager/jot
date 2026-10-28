@@ -125,7 +125,9 @@ fun JotApp(requestNotifications: () -> Unit) {
     }
 
     val holder = rememberSaveableStateHolder()
+    val viewer = remember { ImageViewerState() }
     Box(Modifier.fillMaxSize()) {
+        CompositionLocalProvider(LocalImageViewer provides viewer) {
         SharedTransitionLayout {
             AnimatedContent(
                 targetState = editor,
@@ -148,6 +150,10 @@ fun JotApp(requestNotifications: () -> Unit) {
                     }
                 }
             }
+            CompositionLocalProvider(LocalSharedScope provides this@SharedTransitionLayout) {
+                ImageViewer(viewer)
+            }
+        }
         }
         AnimatedVisibility(
             visible = settingsOpen,

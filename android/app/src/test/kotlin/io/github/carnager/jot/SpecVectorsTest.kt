@@ -90,4 +90,24 @@ class SpecVectorsTest {
         assertEquals("Read book tomorrow", r.title)
         assertEquals("", r.due)
     }
+
+    @Test
+    fun imagesRoundTrip() {
+        val item = Item.parse("""{"id":"x","images":[{"id":"a1","w":1600,"h":1200,"mime":"image/jpeg"}]}""")
+        assertEquals(1, item.images.size)
+        assertEquals(4f / 3f, item.images[0].ratio, 0.001f)
+        val back = item.copy(images = item.images + io.github.carnager.jot.model.ImageRef("b2", 10, 20, "image/gif")).toJson()
+        assertEquals("b2", back.getJSONArray("images").getJSONObject(1).getString("id"))
+        assertEquals(false, item.isEmpty())
+        // Items without images don't grow an empty field.
+        assertEquals(false, Item.parse("""{"id":"y"}""").toJson().has("images"))
+    }
+
+    @Test
+    fun downscaleKeepsLongEdgeAndRatio() {
+        val images = io.github.carnager.jot.data.Images
+        assertEquals(2560 to 1920, images.targetSize(4032, 3024))
+        assertEquals(1440 to 2560, images.targetSize(3024, 5376))
+        assertEquals(800 to 600, images.targetSize(800, 600))
+    }
 }

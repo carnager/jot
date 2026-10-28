@@ -1,6 +1,11 @@
 package io.github.carnager.jot.ui
 
 import android.content.Intent
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.wrapContentHeight
+import androidx.compose.material.icons.outlined.AddPhotoAlternate
+import androidx.compose.material.icons.outlined.PhotoCamera
+import androidx.compose.material.icons.outlined.PhotoLibrary
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.expandVertically
@@ -146,6 +151,8 @@ fun Editor(id: String, actions: AppActions, focusTitle: Boolean, onBack: () -> U
     var sheet by remember { mutableStateOf<String?>(null) }
     var menu by remember { mutableStateOf(false) }
     var palette by remember { mutableStateOf(false) }
+    var imageMenu by remember { mutableStateOf(false) }
+    val picker = rememberImagePicker { refs -> Repo.update(id) { it.copy(images = it.images + refs) } }
 
     fun save(f: (Item) -> Item) { Repo.update(id, f) }
     fun saveChecks() = save { it.copy(checks = checks.map(CheckState::toCheck)) }
@@ -228,6 +235,11 @@ fun Editor(id: String, actions: AppActions, focusTitle: Boolean, onBack: () -> U
             Column(
                 Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp),
             ) {
+                EditorImages(item, onRemove = { ref ->
+                    val before = item
+                    save { it.copy(images = it.images.filter { i -> i.id != ref.id }) }
+                    actions.message("Image removed", "Undo") { Repo.update(id) { cur -> cur.copy(images = before.images) } }
+                })
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     if (item.isTask) {
                         RoundCheck(
@@ -302,6 +314,16 @@ fun Editor(id: String, actions: AppActions, focusTitle: Boolean, onBack: () -> U
                         IconButton(onClick = { palette = !palette }) {
                             Icon(Icons.Outlined.Palette, "Colour", tint = if (palette) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
                         }
+                        Box {
+                            IconButton(onClick = { imageMenu = true }) {
+                                if (picker.busy()) androidx.compose.material3.CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+                                else Icon(Icons.Outlined.AddPhotoAlternate, "Add image", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                            DropdownMenu(imageMenu, { imageMenu = false }) {
+                                DropdownMenuItem(text = { Text("Take photo") }, leadingIcon = { Icon(Icons.Outlined.PhotoCamera, null) }, onClick = { imageMenu = false; picker.camera() })
+                                DropdownMenuItem(text = { Text("Choose from gallery") }, leadingIcon = { Icon(Icons.Outlined.PhotoLibrary, null) }, onClick = { imageMenu = false; picker.gallery() })
+                            }
+                        }
                         IconButton(onClick = { sheet = "labels" }) { Icon(Icons.AutoMirrored.Outlined.Label, "Labels", tint = MaterialTheme.colorScheme.onSurfaceVariant) }
                         IconButton(onClick = { sheet = "date" }) { Icon(Icons.Outlined.Event, "Date", tint = MaterialTheme.colorScheme.onSurfaceVariant) }
                         IconButton(onClick = { sheet = "repeat" }) { Icon(Icons.Outlined.Repeat, "Repeat", tint = MaterialTheme.colorScheme.onSurfaceVariant) }
@@ -325,11 +347,15 @@ fun Editor(id: String, actions: AppActions, focusTitle: Boolean, onBack: () -> U
                             )
                         }
                         Spacer(Modifier.weight(1f))
-                        Text(Fmt.edited(item.updatedAt), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(end = 14.dp))
+                        Text(Fmt.edited(item.updatedAt), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, softWrap = false, modifier = Modifier.padding(end = 14.dp))
                     }
                 }
             }
         }
+        androidx.compose.material3.SnackbarHost(
+            actions.snackbar,
+            Modifier.fillMaxSize().navigationBarsPadding().imePadding().padding(bottom = 84.dp).wrapContentHeight(Alignment.Bottom),
+        )
     }
 
     when (sheet) {
@@ -348,6 +374,34 @@ fun Editor(id: String, actions: AppActions, focusTitle: Boolean, onBack: () -> U
         }
         "labels" -> LabelDialog(Repo.labels(), item.labels.toSet(), onDismiss = { sheet = null }) { set ->
             sheet = null; save { it.copy(labels = set.sorted()) }
+        }
+    }
+}
+
+/** The note's images, large, each with a remove button. Tapping opens the viewer. */
+@Composable
+private fun EditorImages(item: Item, onRemove: (io.github.carnager.jot.model.ImageRef) -> Unit) {
+    if (item.images.isEmpty()) return
+    val viewer = LocalImageViewer.current
+    Column(Modifier.padding(top = 4.dp, bottom = 8.dp).animateContentSize(Motion.medium()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        item.images.forEachIndexed { i, ref ->
+            androidx.compose.runtime.key(ref.id) {
+                Box(Modifier.fillMaxWidth().aspectRatio(ref.ratio.coerceIn(0.5f, 2.5f)).clip(RoundedCornerShape(18.dp))) {
+                    AttachmentImage(
+                        ref, 1600,
+                        Modifier.fillMaxSize().sharedImage(ref.id).clickable { viewer?.open(item.images, i) },
+                    )
+                    Surface(
+                        onClick = { onRemove(ref) },
+                        shape = CircleShape,
+                        color = Color.Black.copy(alpha = 0.55f),
+                        contentColor = Color.White,
+                        modifier = Modifier.align(Alignment.TopEnd).padding(10.dp).size(36.dp),
+                    ) {
+                        Box(contentAlignment = Alignment.Center) { Icon(Icons.Rounded.Close, "Remove image", Modifier.size(18.dp)) }
+                    }
+                }
+            }
         }
     }
 }

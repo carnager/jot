@@ -8,6 +8,7 @@ import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import okhttp3.RequestBody.Companion.asRequestBody
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONArray
 import org.json.JSONObject
@@ -69,6 +70,21 @@ object Api {
         for (i in 0 until arr.length()) runCatching { items += Item.fromJson(arr.getJSONObject(i)) }
         return SyncResponse(r.getLong("rev"), items)
     }
+
+    /** PUT /api/attachments/{id} (idempotent). */
+    suspend fun upload(server: String, token: String, id: String, file: java.io.File, mime: String) = withContext(Dispatchers.IO) {
+        val req = Request.Builder()
+            .url("$server/api/attachments/$id")
+            .header("Authorization", "Bearer $token")
+            .put(file.asRequestBody(mime.toMediaType()))
+            .build()
+        client.newCall(req).execute().use { resp ->
+            if (!resp.isSuccessful) throw ApiException(resp.code, "HTTP ${resp.code}")
+        }
+    }
+
+    fun attachmentUrl(server: String, id: String, width: Int? = null) =
+        "$server/api/attachments/$id" + (width?.let { "?w=$it" } ?: "")
 
     /** Reads /api/events until the connection drops, calling [onRev] for every rev event. */
     suspend fun events(server: String, token: String, onRev: suspend (Long) -> Unit) = withContext(Dispatchers.IO) {

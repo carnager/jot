@@ -35,7 +35,8 @@ object Repo {
 
     lateinit var settings: Settings
         private set
-    private lateinit var app: Context
+    lateinit var app: Context
+        private set
     private lateinit var db: Db
 
     private val lock = Any()
@@ -113,6 +114,7 @@ object Repo {
         }
         writes.trySend(Rows(rows))
         afterChange(sync = true)
+        if (settings.current.signedIn && items.any { it.images.isNotEmpty() } && Images.pendingFiles(app).isNotEmpty()) UploadWorker.enqueue(app)
     }
 
     fun update(ids: Collection<String>, f: (Item) -> Item): List<Item> {
@@ -205,7 +207,11 @@ object Repo {
     suspend fun sync(): Boolean = syncMutex.withLock {
         val p = settings.current
         if (!p.signedIn) return false
-        val (changes, mark) = synchronized(lock) { dirty.keys.mapNotNull { map[it] } to seq }
+        // Items whose images aren't uploaded yet wait (SPEC §2a: upload first, then push the item).
+        val (changes, mark) = synchronized(lock) {
+            dirty.keys.mapNotNull { map[it] }.filter { i -> i.images.none { Images.isPending(app, it.id) } } to seq
+        }
+        if (Images.pendingFiles(app).isNotEmpty()) UploadWorker.enqueue(app)
         _syncing.value = true
         try {
             val resp = Api.sync(p.server, p.token, settings.since, changes)
@@ -229,7 +235,8 @@ object Repo {
             settings.since = resp.rev
             settings.update { it.copy(lastSync = nowMs, syncError = "") }
             afterChange(sync = false)
-            if (synchronized(lock) { dirty.isNotEmpty() }) requestSync(500)
+            val more = synchronized(lock) { dirty.keys.any { id -> map[id]?.images?.none { Images.isPending(app, it.id) } == true } }
+            if (more) requestSync(500)
             return true
         } catch (e: ApiException) {
             Log.w(TAG, "sync failed: ${e.status} ${e.message}")
@@ -289,6 +296,7 @@ object Repo {
         settings.since = 0
         settings.update { it.copy(server = s, username = username.trim(), token = token, offline = false, syncError = "") }
         SyncWorker.schedule(app)
+        UploadWorker.enqueue(app)
         sync()
     }
 

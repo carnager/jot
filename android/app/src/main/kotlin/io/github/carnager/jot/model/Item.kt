@@ -9,6 +9,20 @@ import java.time.format.DateTimeFormatter
 
 data class Check(val id: String, val text: String, val done: Boolean = false, val indent: Int = 0)
 
+/** An image attachment (SPEC §2a). [w]/[h] give the aspect ratio before the image loads. */
+data class ImageRef(val id: String, val w: Int, val h: Int, val mime: String = "image/jpeg") {
+    val ratio: Float get() = if (w > 0 && h > 0) w.toFloat() / h else 4f / 3f
+    fun toJson(): JSONObject = JSONObject().put("id", id).put("w", w).put("h", h).put("mime", mime)
+
+    companion object {
+        fun fromJson(o: JSONObject?): ImageRef? {
+            val id = o?.optString("id").orEmpty()
+            if (id.isEmpty()) return null
+            return ImageRef(id, o!!.optInt("w", 0), o.optInt("h", 0), o.optString("mime", "image/jpeg"))
+        }
+    }
+}
+
 data class Repeat(
     val freq: String,                    // day | week | month | year
     val interval: Int = 1,
@@ -56,6 +70,7 @@ data class Item(
     val title: String = "",
     val body: String = "",
     val checks: List<Check> = emptyList(),
+    val images: List<ImageRef> = emptyList(),
     val color: String = "",
     val labels: List<String> = emptyList(),
     val pinned: Boolean = false,
@@ -91,7 +106,7 @@ data class Item(
         })
     }
 
-    fun isEmpty() = title.isBlank() && body.isBlank() && checks.all { it.text.isBlank() }
+    fun isEmpty() = title.isBlank() && body.isBlank() && checks.all { it.text.isBlank() } && images.isEmpty()
 
     fun toJson(): JSONObject {
         val o = try { JSONObject(raw) } catch (_: Exception) { JSONObject() }
@@ -104,6 +119,7 @@ data class Item(
                 put(JSONObject().put("id", c.id).put("text", c.text).put("done", c.done).put("indent", c.indent))
             }
         })
+        if (images.isNotEmpty() || o.has("images")) o.put("images", JSONArray().apply { images.forEach { put(it.toJson()) } })
         o.put("color", color)
         o.put("labels", JSONArray(labels))
         o.put("pinned", pinned)
@@ -127,6 +143,7 @@ data class Item(
         fun fromJson(o: JSONObject): Item {
             val checks = o.optJSONArray("checks")
             val labels = o.optJSONArray("labels")
+            val images = o.optJSONArray("images")
             return Item(
                 id = o.getString("id"),
                 kind = if (o.optString("kind") == "list") "list" else "note",
@@ -141,6 +158,7 @@ data class Item(
                         indent = c.optInt("indent", 0).coerceIn(0, 1),
                     )
                 },
+                images = if (images == null) emptyList() else List(images.length()) { ImageRef.fromJson(images.optJSONObject(it)) }.filterNotNull(),
                 color = o.optString("color", ""),
                 labels = if (labels == null) emptyList() else List(labels.length()) { labels.optString(it) }.filter { it.isNotEmpty() },
                 pinned = o.optBoolean("pinned", false),

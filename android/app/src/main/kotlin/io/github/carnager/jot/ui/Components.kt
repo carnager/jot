@@ -33,6 +33,7 @@ import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -340,6 +341,14 @@ fun TaskRow(
                 )
                 Box(Modifier.padding(top = 4.dp)) { ItemMeta(item, showDate = showDate, showTime = false) }
             }
+            if (item.images.isNotEmpty()) {
+                val viewer = LocalImageViewer.current
+                val ref = item.images[0]
+                Box(
+                    Modifier.padding(start = 8.dp).size(44.dp).clip(RoundedCornerShape(10.dp))
+                        .clickable(enabled = viewer != null) { viewer?.open(item.images, 0) },
+                ) { AttachmentImage(ref, 240, Modifier.fillMaxSize().sharedImage(ref.id)) }
+            }
             // The time (or overdue date) sits on the right, where the eye scans a schedule.
             val trailing = when {
                 showDate && item.due.isNotEmpty() -> null
@@ -387,7 +396,10 @@ fun NoteCard(
             .clip(CardShape)
             .combinedClickable(onClick = onClick, onLongClick = onLongClick),
     ) {
-        Column(
+        Column {
+        if (item.images.isNotEmpty()) ImageMosaic(item.images, androidx.compose.ui.graphics.RectangleShape)
+        val hasText = item.title.isNotBlank() || item.isTask || item.body.isNotBlank() || item.checks.isNotEmpty() || item.labels.isNotEmpty()
+        if (hasText || item.images.isEmpty()) Column(
             Modifier.accentStrip(accent, inset = 16.dp, x = 7.dp)
                 .animateContentSize(Motion.medium())
                 .padding(start = if (accent != null) 20.dp else 16.dp, end = 16.dp, top = 14.dp, bottom = 14.dp),
@@ -448,6 +460,7 @@ fun NoteCard(
             }
         }
     }
+        }
 }
 
 // ---- headers ---------------------------------------------------------------------------------

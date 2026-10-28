@@ -18,6 +18,11 @@ import androidx.compose.material.icons.rounded.PushPin
 import androidx.compose.material.icons.rounded.Repeat
 import androidx.compose.material.icons.automirrored.rounded.Label
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.foundation.background
+import androidx.compose.ui.draw.clip
+import androidx.compose.material.icons.outlined.AddPhotoAlternate
+import androidx.compose.material.icons.outlined.PhotoCamera
+import androidx.compose.material.icons.outlined.PhotoLibrary
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -137,6 +142,9 @@ fun CaptureField(
     initialText: String = "",
     autoFocus: Boolean = false,
     elevated: Boolean = true,
+    /** Images that come with the capture (shared from another app). */
+    attachments: List<io.github.carnager.jot.model.ImageRef> = emptyList(),
+    importing: Boolean = false,
     focusRequester: FocusRequester = remember { FocusRequester() },
 ) {
     var value by remember { mutableStateOf(TextFieldValue(initialText, TextRange(initialText.length))) }
@@ -150,18 +158,44 @@ fun CaptureField(
     fun build(): Item {
         var item = buildCaptured(parsed, ctx)
         pickedDue?.let { item = item.copy(due = it) }
+        if (attachments.isNotEmpty()) item = item.copy(images = attachments)
         return item
     }
     fun reset() { value = TextFieldValue(""); disabled = emptySet(); pickedDue = null }
     fun submit() {
-        if (value.text.isBlank()) return
+        if (value.text.isBlank() && attachments.isEmpty()) return
+        if (importing) return
         onSubmit(build())
         reset()
     }
 
     LaunchedEffect(autoFocus) { if (autoFocus) runCatching { focusRequester.requestFocus() } }
+    var imageMenu by remember { mutableStateOf(false) }
+    // A photo straight from the capture bar becomes a new note, opened so it can get a title.
+    val picker = rememberImagePicker { refs ->
+        val item = build().let { it.copy(images = it.images + refs) }
+        onExpand(item)
+        reset()
+    }
 
     Column(modifier) {
+        AnimatedVisibility(attachments.isNotEmpty() || importing, enter = expandVertically(Motion.fast()) + fadeIn(Motion.fast()), exit = shrinkVertically(Motion.fast()) + fadeOut(Motion.fast())) {
+            LazyRow(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                contentPadding = PaddingValues(horizontal = 4.dp),
+                modifier = Modifier.fillMaxWidth().padding(bottom = 10.dp),
+            ) {
+                items(attachments, key = { it.id }) { ref ->
+                    AttachmentImage(ref, 240, Modifier.animateItem().size(72.dp).clip(RoundedCornerShape(14.dp)))
+                }
+                if (importing) item("importing") {
+                    androidx.compose.foundation.layout.Box(
+                        Modifier.size(72.dp).clip(RoundedCornerShape(14.dp)).background(scheme.surfaceContainerHighest),
+                        contentAlignment = Alignment.Center,
+                    ) { androidx.compose.material3.CircularProgressIndicator(Modifier.size(24.dp), strokeWidth = 2.dp) }
+                }
+            }
+        }
         val chipList = chips(parsed).let { list ->
             val p = pickedDue
             if (p != null) listOf(ParseChip(Icons.Rounded.Event, Fmt.dueShort(p), listOf(PICKED))) + list.filter { it.icon != Icons.Rounded.Event } else list
@@ -231,11 +265,21 @@ fun CaptureField(
                         inner()
                     },
                 )
+                androidx.compose.foundation.layout.Box {
+                    IconButton(onClick = { imageMenu = true }) {
+                        if (picker.busy()) androidx.compose.material3.CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+                        else Icon(Icons.Outlined.AddPhotoAlternate, "Add a photo", tint = scheme.onSurfaceVariant)
+                    }
+                    androidx.compose.material3.DropdownMenu(imageMenu, { imageMenu = false }) {
+                        androidx.compose.material3.DropdownMenuItem(text = { Text("Take photo") }, leadingIcon = { Icon(Icons.Outlined.PhotoCamera, null) }, onClick = { imageMenu = false; picker.camera() })
+                        androidx.compose.material3.DropdownMenuItem(text = { Text("Choose from gallery") }, leadingIcon = { Icon(Icons.Outlined.PhotoLibrary, null) }, onClick = { imageMenu = false; picker.gallery() })
+                    }
+                }
                 IconButton(onClick = { dateSheet = true }) {
                     Icon(Icons.Rounded.Event, "Set date", tint = if (pickedDue != null) scheme.primary else scheme.onSurfaceVariant)
                 }
                 AnimatedVisibility(
-                    value.text.isNotBlank(),
+                    value.text.isNotBlank() || attachments.isNotEmpty(),
                     enter = scaleIn(spring(dampingRatio = Spring.DampingRatioMediumBouncy)) + fadeIn(Motion.fast()),
                     exit = scaleOut(Motion.fast()) + fadeOut(Motion.fast()),
                 ) {

@@ -1,7 +1,11 @@
 package io.github.carnager.jot
 
 import android.content.Intent
+import android.net.Uri
 import android.os.Bundle
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -54,7 +58,12 @@ class CaptureActivity : ComponentActivity() {
             finish()
             return
         }
-        val shared = if (intent.action == Intent.ACTION_SEND) {
+        val sharedImages: List<Uri> = when (intent.action) {
+            Intent.ACTION_SEND -> listOfNotNull(androidx.core.content.IntentCompat.getParcelableExtra(intent, Intent.EXTRA_STREAM, Uri::class.java))
+            Intent.ACTION_SEND_MULTIPLE -> androidx.core.content.IntentCompat.getParcelableArrayListExtra(intent, Intent.EXTRA_STREAM, Uri::class.java).orEmpty()
+            else -> emptyList()
+        }.filter { intent.type?.startsWith("image/") == true || contentResolver.getType(it)?.startsWith("image/") == true }
+        val shared = if (intent.action == Intent.ACTION_SEND || intent.action == Intent.ACTION_SEND_MULTIPLE) {
             listOfNotNull(intent.getStringExtra(Intent.EXTRA_SUBJECT), intent.getStringExtra(Intent.EXTRA_TEXT))
                 .filter { it.isNotBlank() }.distinct().joinToString("\n")
         } else ""
@@ -65,6 +74,17 @@ class CaptureActivity : ComponentActivity() {
             val prefs by Repo.settings.prefs.collectAsState()
             JotTheme(prefs.theme, prefs.dynamicColor) {
                 val visible = remember { MutableTransitionState(false).apply { targetState = true } }
+                var attachments by remember { mutableStateOf(listOf<io.github.carnager.jot.model.ImageRef>()) }
+                var importing by remember { mutableStateOf(sharedImages.isNotEmpty()) }
+                LaunchedEffect(Unit) {
+                    if (sharedImages.isNotEmpty()) {
+                        attachments = sharedImages.mapNotNull { io.github.carnager.jot.data.Images.import(this@CaptureActivity, it) }
+                        importing = false
+                        if (attachments.size < sharedImages.size) {
+                            Toast.makeText(this@CaptureActivity, "Some images couldn't be read", Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                }
                 Box(
                     Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.32f))
                         .clickable(remember { MutableInteractionSource() }, null) { finish() },
@@ -79,7 +99,7 @@ class CaptureActivity : ComponentActivity() {
                             Column(Modifier.navigationBarsPadding().imePadding().padding(16.dp)) {
                                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(start = 4.dp, bottom = 8.dp)) {
                                     Text(
-                                        if (shared.isNotEmpty()) "Save to Jot" else "Quick add",
+                                        if (shared.isNotEmpty() || sharedImages.isNotEmpty()) "Save to Jot" else "Quick add",
                                         style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold,
                                         modifier = Modifier.weight(1f),
                                     )
@@ -92,6 +112,8 @@ class CaptureActivity : ComponentActivity() {
                                     ctx,
                                     initialText = shared,
                                     autoFocus = true,
+                                    attachments = attachments,
+                                    importing = importing,
                                     onSubmit = { item ->
                                         Repo.save(item)
                                         val where = if (item.due.isNotEmpty()) Fmt.dueShort(item.due) else "Notes"
