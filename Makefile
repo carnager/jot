@@ -20,10 +20,11 @@ run: server
 	./bin/jot serve --data ./data --web-dir server/web
 
 # proteus runs the Arch package (repo.mooned.de) as a user service on 127.0.0.1:5566 behind Caddy
-# (jot.mooned.de). Commit first: the package builds the committed state.
+# (jot.mooned.de). Commit first: the package builds the committed state. -Syu upgrades all of
+# proteus too (no partial upgrades on Arch).
 deploy:
 	~/Code/archrepo/publish jot
-	ssh -t proteus 'sudo pacman -Sy --needed jot && systemctl --user restart jot && systemctl --user is-active jot'
+	ssh -t proteus 'sudo pacman -Syu --needed jot && systemctl --user restart jot && systemctl --user is-active jot'
 
 # Nightly restic backup of ~/.local/share/jot to sftp:scorpia:Backup/Jot/restic (03:15).
 # Creates the restic password on proteus once; keep a copy of it somewhere safe.
