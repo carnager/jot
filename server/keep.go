@@ -32,7 +32,10 @@ type keepNote struct {
 		Text      string `json:"text"`
 		IsChecked bool   `json:"isChecked"`
 	} `json:"listContent"`
-	Attachments []json.RawMessage `json:"attachments"`
+	Attachments []struct {
+		FilePath string `json:"filePath"`
+		MIMEType string `json:"mimetype"`
+	} `json:"attachments"`
 }
 
 var keepColors = map[string]string{
@@ -46,9 +49,12 @@ type keepFile struct {
 	data []byte
 }
 
+// keepSource reads attachment files that sit next to the note JSON in a Takeout export.
+type keepSource func(dir, name string) ([]byte, error)
+
 // readKeepFiles collects the note JSON files from a Takeout zip or an
 // extracted directory.
-func readKeepFiles(src string) ([]keepFile, error) {
+func readKeepFiles(src string) ([]keepFile, keepSource, error) {
 	var out []keepFile
 	isNote := func(name string) bool {
 		return strings.EqualFold(filepath.Ext(name), ".json") && !strings.HasSuffix(strings.ToLower(name), "labels.json")
@@ -56,25 +62,40 @@ func readKeepFiles(src string) ([]keepFile, error) {
 	if strings.EqualFold(filepath.Ext(src), ".zip") {
 		zr, err := zip.OpenReader(src)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
-		defer zr.Close()
+		byName := map[string]*zip.File{}
+		for _, f := range zr.File {
+			byName[f.Name] = f
+		}
+		open := func(dir, name string) ([]byte, error) {
+			f := byName[dir+"/"+name]
+			if f == nil {
+				return nil, os.ErrNotExist
+			}
+			rc, err := f.Open()
+			if err != nil {
+				return nil, err
+			}
+			defer rc.Close()
+			return io.ReadAll(io.LimitReader(rc, maxAttachmentBytes+1))
+		}
 		for _, f := range zr.File {
 			if !isNote(f.Name) || !strings.Contains(f.Name, "Keep/") {
 				continue
 			}
 			rc, err := f.Open()
 			if err != nil {
-				return nil, err
+				return nil, nil, err
 			}
 			data, err := io.ReadAll(rc)
 			rc.Close()
 			if err != nil {
-				return nil, err
+				return nil, nil, err
 			}
 			out = append(out, keepFile{f.Name, data})
 		}
-		return out, nil
+		return out, open, nil
 	}
 	err := filepath.WalkDir(src, func(p string, d fs.DirEntry, err error) error {
 		if err != nil || d.IsDir() || !isNote(p) {
@@ -84,11 +105,11 @@ func readKeepFiles(src string) ([]keepFile, error) {
 		if err != nil {
 			return err
 		}
-		rel, _ := filepath.Rel(src, p)
-		out = append(out, keepFile{rel, data})
+		out = append(out, keepFile{p, data})
 		return nil
 	})
-	return out, err
+	open := func(dir, name string) ([]byte, error) { return os.ReadFile(filepath.Join(dir, name)) }
+	return out, open, err
 }
 
 func normalizeLabel(s string) string {
@@ -105,20 +126,19 @@ func importKeep(store *Store, username, src string) error {
 	if err != nil {
 		return fmt.Errorf("user %q: %w", username, err)
 	}
-	files, err := readKeepFiles(src)
+	files, openFile, err := readKeepFiles(src)
 	if err != nil {
 		return err
 	}
 	now := time.Now().UnixMilli()
 	var changes []json.RawMessage
-	skipped, attachments := 0, 0
+	skipped, images, missing := 0, 0, 0
 	for _, f := range files {
 		var n keepNote
 		if err := json.Unmarshal(f.data, &n); err != nil || (n.CreatedTimestampUsec == 0 && n.UserEditedTimestampUsec == 0) {
 			skipped++
 			continue
 		}
-		attachments += len(n.Attachments)
 		sum := sha1.Sum([]byte(filepath.Base(f.name)))
 		updated := n.UserEditedTimestampUsec / 1000
 		created := n.CreatedTimestampUsec / 1000
@@ -159,6 +179,33 @@ func importKeep(store *Store, username, src string) error {
 			"trashedAt":    0,
 			"deleted":      false,
 		}
+		var imgs []Attachment
+		for _, att := range n.Attachments {
+			if !strings.HasPrefix(att.MIMEType, "image/") {
+				missing++ // audio recordings
+				continue
+			}
+			data, err := openFile(filepath.Dir(f.name), att.FilePath)
+			if err != nil || len(data) > maxAttachmentBytes {
+				missing++
+				continue
+			}
+			isum := sha1.Sum([]byte(filepath.Base(f.name) + "/" + att.FilePath))
+			a, err := store.PutAttachment(u.ID, "keep-"+hex.EncodeToString(isum[:10]), att.MIMEType, data)
+			if err != nil {
+				missing++
+				continue
+			}
+			images++
+			imgs = append(imgs, a)
+		}
+		if len(imgs) > 0 {
+			refs := make([]map[string]any, len(imgs))
+			for i, a := range imgs {
+				refs[i] = map[string]any{"id": a.ID, "w": a.W, "h": a.H, "mime": a.MIME}
+			}
+			item["images"] = refs
+		}
 		if n.IsTrashed {
 			item["trashedAt"] = now
 		}
@@ -187,8 +234,11 @@ func importKeep(store *Store, username, src string) error {
 	if skipped > 0 {
 		fmt.Printf(", skipped %d unreadable files", skipped)
 	}
-	if attachments > 0 {
-		fmt.Printf(" (%d image/audio attachments not imported)", attachments)
+	if images > 0 {
+		fmt.Printf(", %d images", images)
+	}
+	if missing > 0 {
+		fmt.Printf(" (%d attachments skipped: audio or missing files)", missing)
 	}
 	fmt.Println()
 	return nil

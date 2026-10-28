@@ -33,6 +33,8 @@ func (s *Server) routes(web http.Handler) http.Handler {
 	mux.HandleFunc("POST /api/sync", s.auth(s.handleSync))
 	mux.HandleFunc("GET /api/events", s.auth(s.handleEvents))
 	mux.HandleFunc("GET /api/export", s.auth(s.handleExport))
+	mux.HandleFunc("PUT /api/attachments/{id}", s.auth(s.handlePutAttachment))
+	mux.HandleFunc("GET /api/attachments/{id}", s.auth(s.handleGetAttachment))
 	mux.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusNotFound, "no such endpoint")
 	})

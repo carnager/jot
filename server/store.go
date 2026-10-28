@@ -19,7 +19,8 @@ import (
 // fields unknown to the server survive round trips; only the columns needed for
 // sync (id, updatedAt, rev) are extracted.
 type Store struct {
-	db *sql.DB
+	db  *sql.DB
+	dir string
 }
 
 var ErrNotFound = errors.New("not found")
@@ -63,11 +64,11 @@ func OpenStore(dir string) (*Store, error) {
 	// A single connection serialises writers; at personal scale this is
 	// simpler and faster than fighting SQLITE_BUSY.
 	db.SetMaxOpenConns(1)
-	if _, err := db.Exec(schema); err != nil {
+	if _, err := db.Exec(schema + attachmentSchema); err != nil {
 		db.Close()
 		return nil, fmt.Errorf("init schema: %w", err)
 	}
-	return &Store{db: db}, nil
+	return &Store{db: db, dir: dir}, nil
 }
 
 func (s *Store) Close() error { return s.db.Close() }

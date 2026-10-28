@@ -43,6 +43,9 @@ no "note vs task" decision at capture time.
                                 //   New items: Date.now(). Reorder: midpoint of the neighbours.
   "createdAt": 1730000000000,   // ms epoch
   "updatedAt": 1730000000000,   // ms epoch, set by the client on EVERY change (used for last-write-wins)
+  "images": [                  // optional, shown above title/body in cards and the editor (Keep-style)
+    { "id": "01JB...", "w": 1600, "h": 1200, "mime": "image/jpeg" }   // id = attachment id (§2a)
+  ],
   "trashedAt": 0,               // ms epoch, 0 = not in trash. Clients hide trash > 30 days and set deleted.
   "deleted": false,             // tombstone, gone for good. Kept so deletes sync.
   "rev": 0                      // set by the server only. Clients send back whatever they have; it's ignored.
@@ -107,6 +110,23 @@ Limits: a body of 20 MB at most. Items larger than 1 MB are rejected with 413.
 It sends `event: rev\ndata: <rev>\n\n` whenever this user's data changes (send at most 4 per second), plus a
 `: ping` comment every 25 s. On an event, a client with a lower rev runs a sync. The web app uses this all
 the time. Android uses it while the app is in the foreground.
+
+### Attachments (§2a)
+Images are stored next to items. An item only references them by id in `images`.
+- `PUT /api/attachments/{id}`: the raw image bytes as the body, with `Content-Type` image/jpeg | image/png | image/webp | image/gif.
+  `{id}` is client-generated (same format as item ids, `[A-Za-z0-9_-]{1,64}`), so an image captured offline can be
+  referenced right away and uploaded later. It's idempotent: a second PUT with the same id is accepted and changes nothing.
+  The maximum size is 25 MB. Responds `{"id","w","h","mime","size"}`.
+- `GET /api/attachments/{id}` returns the original. `GET /api/attachments/{id}?w=480` returns a JPEG thumbnail at most 480px wide
+  (allowed widths: 240, 480, 960, 1600), generated and cached by the server. Responses are
+  `Cache-Control: private, max-age=31536000, immutable`, because ids never change. Returns 404 if not uploaded (yet).
+  The web app's `<img>` tags authenticate with the session cookie.
+- **Clients downscale before uploading**: long edge at most 2560px, JPEG quality 85, with EXIF orientation applied and metadata
+  stripped (no GPS leaks). Animated GIFs are uploaded as they are.
+- Order: the client uploads first, then pushes the item. Offline, the item syncs whenever it can, and the upload is retried
+  in the background. Other devices show a placeholder until the image appears (retry on 404).
+- The server deletes attachments that no item references (trashed items still count as references, deleted ones don't)
+  once they're older than 24 h. Re-importing from Keep brings the Takeout images along.
 
 ### Errors
 `{"error":"message"}` with the matching HTTP status. A `401` means the client returns to login.

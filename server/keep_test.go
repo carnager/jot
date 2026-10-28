@@ -13,7 +13,9 @@ func TestImportKeep(t *testing.T) {
 	os.WriteFile(filepath.Join(dir, "Shopping.json"), []byte(`{"color":"YELLOW","isTrashed":false,"isPinned":true,"isArchived":false,
 		"title":"Shopping","userEditedTimestampUsec":1700000000000000,"createdTimestampUsec":1690000000000000,
 		"labels":[{"name":"Home Stuff"}],"listContent":[{"text":"Milk","isChecked":false},{"text":"Eggs","isChecked":true}]}`), 0o644)
+	os.WriteFile(filepath.Join(dir, "photo.png"), testPNG(t, 20, 10), 0o644)
 	os.WriteFile(filepath.Join(dir, "Idea.json"), []byte(`{"color":"DEFAULT","title":"","textContent":"An idea",
+		"attachments":[{"filePath":"photo.png","mimetype":"image/png"},{"filePath":"voice.3gp","mimetype":"audio/3gp"}],
 		"userEditedTimestampUsec":1700000000000000,"createdTimestampUsec":1700000000000000,"isTrashed":true}`), 0o644)
 	os.WriteFile(filepath.Join(dir, "Labels.json"), []byte(`{}`), 0o644)
 
@@ -41,7 +43,12 @@ func TestImportKeep(t *testing.T) {
 	if labels := shop["labels"].([]any); len(labels) != 1 || labels[0] != "home-stuff" {
 		t.Fatalf("labels: %v", labels)
 	}
-	if idea := byTitle[""]; idea["body"] != "An idea" || idea["trashedAt"].(float64) == 0 {
+	idea := byTitle[""]
+	if idea["body"] != "An idea" || idea["trashedAt"].(float64) == 0 {
 		t.Fatalf("idea: %v", idea)
+	}
+	imgs, _ := idea["images"].([]any)
+	if len(imgs) != 1 || imgs[0].(map[string]any)["w"].(float64) != 20 {
+		t.Fatalf("images: %v", idea["images"])
 	}
 }

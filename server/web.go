@@ -59,7 +59,7 @@ func webHandler(dir string) (http.Handler, error) {
 		h.Set("X-Content-Type-Options", "nosniff")
 		h.Set("Referrer-Policy", "same-origin")
 		if name == "index.html" {
-			h.Set("Content-Security-Policy", "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; frame-ancestors 'none'")
+			h.Set("Content-Security-Policy", "default-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; frame-ancestors 'none'")
 		}
 		if ct := mime.TypeByExtension(path.Ext(name)); ct != "" {
 			h.Set("Content-Type", ct)

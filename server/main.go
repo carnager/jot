@@ -110,6 +110,7 @@ func serve(store *Store, addr, webDir string) error {
 		log.Printf("no users yet — create one with: jot user add <name>")
 	}
 	s := &Server{store: store, hub: NewHub()}
+	go s.collectAttachmentsLoop()
 	srv := &http.Server{
 		Addr:              addr,
 		Handler:           s.routes(web),
