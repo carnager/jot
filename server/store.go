@@ -217,7 +217,7 @@ type ItemMeta struct {
 	UpdatedAt int64  `json:"updatedAt"`
 }
 
-// Sync applies changes with last-write-wins on updatedAt and returns every item
+// Sync merges changes into the stored items (field by field, see mergeItems) and returns every item
 // of the user with rev > since, plus the current global rev.
 func (s *Store) Sync(userID, since int64, changes []json.RawMessage) (int64, []json.RawMessage, bool, error) {
 	tx, err := s.db.Begin()
@@ -240,25 +240,41 @@ func (s *Store) Sync(userID, since int64, changes []json.RawMessage) (int64, []j
 		if m.ID == "" || len(m.ID) > 128 {
 			return 0, nil, false, fmt.Errorf("%w: missing or overlong id", errBadItem)
 		}
-		var stored int64
-		err := tx.QueryRow(`SELECT updated_at FROM items WHERE user_id = ? AND id = ?`, userID, m.ID).Scan(&stored)
+		data, err := withoutRev(raw)
+		if err != nil {
+			return 0, nil, false, fmt.Errorf("%w: %v", errBadItem, err)
+		}
+		updatedAt := m.UpdatedAt
+		var stored string
+		err = tx.QueryRow(`SELECT data FROM items WHERE user_id = ? AND id = ?`, userID, m.ID).Scan(&stored)
 		switch {
 		case errors.Is(err, sql.ErrNoRows):
 		case err != nil:
 			return 0, nil, false, err
-		case m.UpdatedAt < stored:
-			losers = append(losers, m.ID) // stale write; the newer copy is returned below
-			continue
-		}
-		data, err := withoutRev(raw)
-		if err != nil {
-			return 0, nil, false, fmt.Errorf("%w: %v", errBadItem, err)
+		default:
+			// Merge field by field (SPEC §2b) so concurrent edits on two devices both survive.
+			var st, in map[string]json.RawMessage
+			if err := json.Unmarshal([]byte(stored), &st); err != nil {
+				return 0, nil, false, fmt.Errorf("stored item %s: %w", m.ID, err)
+			}
+			json.Unmarshal([]byte(data), &in)
+			merged := mergeItems(st, in)
+			b, err := json.Marshal(merged)
+			if err != nil {
+				return 0, nil, false, err
+			}
+			if string(b) == stored {
+				losers = append(losers, m.ID) // nothing new; make sure the client gets the stored copy
+				continue
+			}
+			data = string(b)
+			json.Unmarshal(merged["updatedAt"], &updatedAt)
 		}
 		rev++
 		changed = true
 		if _, err := tx.Exec(`INSERT INTO items (user_id, id, rev, updated_at, data) VALUES (?, ?, ?, ?, ?)
 			ON CONFLICT (user_id, id) DO UPDATE SET rev = excluded.rev, updated_at = excluded.updated_at, data = excluded.data`,
-			userID, m.ID, rev, m.UpdatedAt, data); err != nil {
+			userID, m.ID, rev, updatedAt, data); err != nil {
 			return 0, nil, false, err
 		}
 	}

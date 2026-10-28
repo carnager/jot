@@ -93,9 +93,9 @@ Request:
 - `since`: the highest `rev` the client has seen (0 = full download).
 - `changes`: items the client changed locally since its last successful sync (full objects).
 
-Server behaviour, per change: the change is stored if there is no stored item with that id, or if
-`change.updatedAt >= stored.updatedAt` (last write wins). Stored items get a fresh, globally increasing `rev`.
-Changes that lose LWW are ignored (the newer server copy comes back in the response because its rev > since).
+Server behaviour, per change: a new id is stored as it is. An existing item is **merged field by field** with the incoming
+change (§2b). Stored items get a fresh, globally increasing `rev`. If the merge leaves the stored item unchanged, the
+stored copy is still returned, so the client converges.
 
 Response:
 ```json
@@ -127,6 +127,41 @@ Images are stored next to items. An item only references them by id in `images`.
   in the background. Other devices show a placeholder until the image appears (retry on 404).
 - The server deletes attachments that no item references (trashed items still count as references, deleted ones don't)
   once they're older than 24 h. Re-importing from Keep brings the Takeout images along.
+
+### Field-level merge (§2b)
+Two devices editing the same item (one ticking checks offline, the other renaming it) must not lose either change.
+The server merges per field group, so clients only have to record *when* they changed something.
+
+- `"fm"`: an object that maps a **field group** to the ms epoch of the last local change to anything in that group. Whenever
+  a client changes a field, it sets `fm[group] = now` (and `updatedAt = now`, as before). Groups:
+
+  | group | fields |
+  |---|---|
+  | `title` | title |
+  | `body` | body |
+  | `kind` | kind |
+  | `color` | color |
+  | `labels` | labels |
+  | `pinned` | pinned |
+  | `archived` | archived |
+  | `schedule` | done, doneAt, due, remind, snoozedUntil, repeat |
+  | `sort` | sort |
+  | `images` | images |
+  | `trash` | trashedAt |
+  | `order` | the order of `checks` (adding, removing or moving a check) |
+
+- **Checks** also carry `"u"` (the ms epoch of their last change: text, done or indent). A removed check is kept as a
+  tombstone `{"id":"..","deleted":true,"u":..}`. Clients hide tombstones and drop those older than 30 days.
+  Completing a repeating item resets every check, so each one gets a fresh `u`.
+- Merge on the server, when an incoming change meets a stored item:
+  - For each group, the side with the larger `fm[group]` wins. A missing entry counts as that side's `updatedAt`, so old
+    clients degrade to whole-item last-write-wins. A tie goes to the incoming side.
+  - Checks: the union by id, where the larger `u` wins per check (a tombstone is just a check). The order comes from the side
+    that wins the `order` group, and checks only known to the other side are appended after it.
+  - `deleted: true` on either side wins (deletion is final).
+  - Unknown or other fields come from the side with the larger `updatedAt`. The merged `updatedAt` = max of both, and `fm` = the max per group.
+  - If the merged result equals the stored item, nothing is written. Otherwise it's stored with a new rev and comes back in
+    the response, like any other change, so the client always ends up with the merged version.
 
 ### Errors
 `{"error":"message"}` with the matching HTTP status. A `401` means the client returns to login.
