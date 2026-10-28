@@ -43,6 +43,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Alarm
+import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Checklist
 import androidx.compose.material.icons.rounded.NotificationsActive
 import androidx.compose.material.icons.rounded.PushPin
@@ -92,6 +93,8 @@ import io.github.carnager.jot.data.Repo
 import io.github.carnager.jot.model.Item
 import io.github.carnager.jot.ui.theme.LocalDark
 import io.github.carnager.jot.ui.theme.NoteColors
+import io.github.carnager.jot.ui.theme.OnFill
+import io.github.carnager.jot.ui.theme.LocalOnFill
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlin.math.cos
@@ -172,7 +175,9 @@ fun MetaChip(icon: ImageVector?, text: String, color: Color = MaterialTheme.colo
 fun LabelTag(name: String, color: Color = MaterialTheme.colorScheme.primary) {
     Text(
         "#$name", style = MaterialTheme.typography.labelMedium, color = color, maxLines = 1,
-        modifier = Modifier.clip(RoundedCornerShape(50)).background(color.copy(alpha = 0.12f)).padding(horizontal = 8.dp, vertical = 1.dp),
+        modifier = Modifier.clip(RoundedCornerShape(50)).background(
+            if (LocalOnFill.current != null) MaterialTheme.colorScheme.primaryContainer else color.copy(alpha = 0.12f),
+        ).padding(horizontal = 8.dp, vertical = 1.dp),
     )
 }
 
@@ -253,6 +258,7 @@ private fun rememberCompletion(item: Item, onToggle: () -> Unit): Pair<Boolean, 
 
 @Composable
 fun checkTint(item: Item): Color {
+    if (LocalOnFill.current != null) return MaterialTheme.colorScheme.onSurface
     val accent = NoteColors.accent(item.color, LocalDark.current)
     return when {
         Fmt.isOverdue(item) -> MaterialTheme.colorScheme.error
@@ -382,32 +388,44 @@ fun NoteCard(
     onToggleDone: () -> Unit,
 ) {
     val dark = LocalDark.current
-    val scheme = MaterialTheme.colorScheme
-    val accent = NoteColors.accent(item.color, dark)
+    val outer = MaterialTheme.colorScheme
+    val fill = NoteColors.fill(item.color, dark)
     val (completing, toggle) = rememberCompletion(item, onToggleDone)
     val checked = item.done || completing
-    val content = scheme.onSurface
     val borderColor by animateColorAsState(
-        if (selected) scheme.primary else scheme.outlineVariant.copy(alpha = if (dark) 0.55f else 0.8f),
+        when {
+            selected -> outer.onSurface
+            fill != null -> Color.Transparent
+            else -> outer.outlineVariant.copy(alpha = if (dark) 0.55f else 0.8f)
+        },
         Motion.fast(), label = "cardBorder",
     )
     val alpha by animateFloatAsState(if (completing) 0.45f else 1f, Motion.medium(), label = "cardAlpha")
+    val bg by animateColorAsState(
+        fill ?: if (selected) outer.secondaryContainer else if (dark) outer.surfaceContainer else outer.surfaceContainerLowest,
+        Motion.medium(), label = "cardBg",
+    )
+    // Selection must read on any fill: a thick ring in the page's ink plus a check badge.
+    val ringWidth by androidx.compose.animation.core.animateDpAsState(if (selected) 3.dp else if (fill != null) 0.dp else 1.dp, Motion.fast(), label = "ring")
+    Box {
     Surface(
         shape = CardShape,
-        color = if (selected) scheme.secondaryContainer else if (dark) scheme.surfaceContainer else scheme.surfaceContainerLowest,
-        border = BorderStroke(if (selected) 2.dp else 1.dp, borderColor),
-        shadowElevation = if (dark) 0.dp else 1.dp,
+        color = bg,
+        border = if (ringWidth > 0.dp) BorderStroke(ringWidth, borderColor) else null,
+        shadowElevation = if (dark || fill != null) 0.dp else 1.dp,
         modifier = Modifier.fillMaxWidth().sharedItem(item.id).graphicsLayer { this.alpha = alpha }
             .clip(CardShape)
             .combinedClickable(onClick = onClick, onLongClick = onLongClick),
     ) {
+        val body: @Composable () -> Unit = {
+        val scheme = MaterialTheme.colorScheme
+        val content = scheme.onSurface
         Column {
         if (item.images.isNotEmpty()) ImageMosaic(item.images, androidx.compose.ui.graphics.RectangleShape)
         val hasText = item.title.isNotBlank() || item.isTask || item.body.isNotBlank() || item.checks.isNotEmpty() || item.labels.isNotEmpty()
         if (hasText || item.images.isEmpty()) Column(
-            Modifier.accentStrip(accent, inset = 16.dp, x = 7.dp)
-                .animateContentSize(Motion.medium())
-                .padding(start = if (accent != null) 20.dp else 16.dp, end = 16.dp, top = 14.dp, bottom = 14.dp),
+            Modifier.animateContentSize(Motion.medium())
+                .padding(start = 16.dp, end = 16.dp, top = 14.dp, bottom = 14.dp),
         ) {
             if (item.title.isNotBlank() || item.isTask) {
                 Row(verticalAlignment = Alignment.Top) {
@@ -438,7 +456,7 @@ fun NoteCard(
                             ) {
                                 Box(
                                     Modifier.size(15.dp).clip(RoundedCornerShape(4.dp))
-                                        .border(1.6.dp, scheme.onSurfaceVariant.copy(alpha = 0.55f), RoundedCornerShape(4.dp)),
+                                        .border(1.6.dp, scheme.onSurfaceVariant.copy(alpha = if (LocalOnFill.current != null) 0.85f else 0.55f), RoundedCornerShape(4.dp)),
                                 )
                                 Spacer(Modifier.width(8.dp))
                                 Text(c.text, style = MaterialTheme.typography.bodyMedium, color = content.copy(alpha = 0.9f), maxLines = 2, overflow = TextOverflow.Ellipsis)
@@ -466,6 +484,19 @@ fun NoteCard(
         }
     }
         }
+        if (fill != null) OnFill(fill, bg) { body() } else body()
+    }
+    androidx.compose.animation.AnimatedVisibility(
+        selected, Modifier.align(Alignment.TopEnd).padding(8.dp),
+        enter = androidx.compose.animation.scaleIn(Motion.fast()) + androidx.compose.animation.fadeIn(Motion.fast()),
+        exit = androidx.compose.animation.scaleOut(Motion.fast()) + fadeOut(Motion.fast()),
+    ) {
+        Box(
+            Modifier.size(26.dp).clip(CircleShape).background(outer.onSurface).border(2.dp, outer.surface, CircleShape),
+            contentAlignment = Alignment.Center,
+        ) { Icon(Icons.Rounded.Check, "Selected", Modifier.size(16.dp), tint = outer.surface) }
+    }
+    }
 }
 
 // ---- headers ---------------------------------------------------------------------------------

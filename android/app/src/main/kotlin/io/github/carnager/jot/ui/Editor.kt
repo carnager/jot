@@ -181,7 +181,23 @@ fun Editor(id: String, actions: AppActions, focusTitle: Boolean, onBack: () -> U
         focusNext = null
     }
 
-    Surface(color = MaterialTheme.colorScheme.surface, modifier = Modifier.fillMaxSize().sharedItem(id)) {
+    // The item's colour is the whole page; it animates when the colour changes.
+    val fill = NoteColors.fill(item.color, dark)
+    val pageBg by androidx.compose.animation.animateColorAsState(fill ?: MaterialTheme.colorScheme.surface, Motion.medium(), label = "editorBg")
+    val view = androidx.compose.ui.platform.LocalView.current
+    val darkIcons = if (fill != null) NoteColors.inkIsDark(fill) else !dark
+    androidx.compose.runtime.DisposableEffect(darkIcons) {
+        val window = (view.context as? android.app.Activity)?.window
+        val ctl = window?.let { androidx.core.view.WindowCompat.getInsetsController(it, view) }
+        ctl?.isAppearanceLightStatusBars = darkIcons
+        ctl?.isAppearanceLightNavigationBars = darkIcons
+        onDispose {
+            ctl?.isAppearanceLightStatusBars = !dark
+            ctl?.isAppearanceLightNavigationBars = !dark
+        }
+    }
+    Surface(color = pageBg, modifier = Modifier.fillMaxSize().sharedItem(id)) {
+    val page: @Composable () -> Unit = {
         Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().imePadding()) {
             // Top bar
             Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -192,7 +208,7 @@ fun Editor(id: String, actions: AppActions, focusTitle: Boolean, onBack: () -> U
                     Box(
                         Modifier.size(20.dp).clip(CircleShape)
                             .background(accent ?: Color.Transparent)
-                            .border(if (accent == null) 1.5.dp else 0.dp, if (accent == null) ring else Color.Transparent, CircleShape),
+                            .border(if (accent == null) 1.5.dp else 2.dp, if (accent == null) ring else MaterialTheme.colorScheme.onSurface, CircleShape),
                         contentAlignment = Alignment.Center,
                     ) { if (accent == null) Icon(Icons.Outlined.Palette, null, Modifier.size(12.dp), tint = ring) }
                 }
@@ -357,6 +373,8 @@ fun Editor(id: String, actions: AppActions, focusTitle: Boolean, onBack: () -> U
             actions.snackbar,
             Modifier.fillMaxSize().navigationBarsPadding().imePadding().padding(bottom = 84.dp).wrapContentHeight(Alignment.Bottom),
         )
+    }
+    if (fill != null) io.github.carnager.jot.ui.theme.OnFill(fill, pageBg) { page() } else page()
     }
 
     when (sheet) {

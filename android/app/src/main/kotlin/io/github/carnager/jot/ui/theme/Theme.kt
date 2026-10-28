@@ -12,7 +12,10 @@ import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.staticCompositionLocalOf
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.compositeOver
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.ExperimentalTextApi
 import androidx.compose.ui.text.TextStyle
@@ -176,23 +179,68 @@ fun JotTheme(mode: ThemeMode, dynamic: Boolean, content: @Composable () -> Unit)
 }
 
 /**
- * Item colours are accents, never fills: a strip on the card's leading edge, a dot in the editor,
- * a tinted checkbox ring. Surfaces stay neutral.
+ * Item colours: vivid fills for cards and the editor, the same colours as the accent strip on rows.
+ * Text on a fill is dark ink or white by luminance; secondary elements use translucent overlays.
  */
 object NoteColors {
     val names = listOf("", "red", "orange", "yellow", "green", "teal", "blue", "purple", "pink", "brown", "gray")
 
     private val light = mapOf(
-        "red" to 0xFFD93F3F, "orange" to 0xFFE8751A, "yellow" to 0xFFD4A20B, "green" to 0xFF3E9B4F,
-        "teal" to 0xFF14958C, "blue" to 0xFF3A78D8, "purple" to 0xFF8556D0, "pink" to 0xFFD2508F,
-        "brown" to 0xFF96694A, "gray" to 0xFF7A7F87,
+        "red" to 0xFFE5484D, "orange" to 0xFFF76B15, "yellow" to 0xFFFFC53D, "green" to 0xFF30A46C,
+        "teal" to 0xFF12A594, "blue" to 0xFF0090FF, "purple" to 0xFF8E4EC6, "pink" to 0xFFD6409F,
+        "brown" to 0xFFAD7F58, "gray" to 0xFF8B8D98,
     )
     private val dark = mapOf(
-        "red" to 0xFFFF7B72, "orange" to 0xFFFFA15C, "yellow" to 0xFFF2C94C, "green" to 0xFF6BCB77,
-        "teal" to 0xFF4FD1C5, "blue" to 0xFF79A8FF, "purple" to 0xFFB392F0, "pink" to 0xFFF285B8,
-        "brown" to 0xFFC49A78, "gray" to 0xFFA4A9B1,
+        "red" to 0xFFC9383D, "orange" to 0xFFD95A10, "yellow" to 0xFFE0A92A, "green" to 0xFF26885A,
+        "teal" to 0xFF0E8A7C, "blue" to 0xFF0A77D4, "purple" to 0xFF7642A6, "pink" to 0xFFB53586,
+        "brown" to 0xFF8F6948, "gray" to 0xFF6F717B,
     )
 
-    /** The accent for [name], or null for none. */
-    fun accent(name: String, dark: Boolean): Color? = (if (dark) this.dark else light)[name]?.let { Color(it) }
+    val Ink = Color(0xFF1B1A17)
+
+    /** The fill for [name], or null for none. */
+    fun fill(name: String, dark: Boolean): Color? = (if (dark) this.dark else light)[name]?.let { Color(it) }
+
+    /** Rows keep a strip in the item colour. */
+    fun accent(name: String, dark: Boolean): Color? = fill(name, dark)
+
+    /** Dark ink on bright fills (relative luminance > 0.42), white otherwise. */
+    fun ink(fill: Color): Color = if (fill.luminance() > 0.42f) Ink else Color.White
+
+    fun inkIsDark(fill: Color) = ink(fill) == Ink
+
+    /** Chips and secondary surfaces on a fill: black 12% on light fills, white 18% on dark ones. */
+    fun overlay(fill: Color): Color = if (inkIsDark(fill)) Color.Black.copy(alpha = 0.12f) else Color.White.copy(alpha = 0.18f)
+}
+
+val LocalOnFill = staticCompositionLocalOf<Color?> { null }
+
+/**
+ * Content on a coloured fill: the colour scheme is rebuilt around the fill, so text, icons, rings,
+ * chips and containers stay legible on every colour without each component knowing about it.
+ */
+@Composable
+fun OnFill(fill: Color, background: Color = fill, content: @Composable () -> Unit) {
+    val ink = NoteColors.ink(fill)
+    val ov = NoteColors.overlay(fill)
+    // White on these fills is only 3–5:1, so muted white stays nearly opaque; dark ink has room to spare.
+    val mutedAlpha = if (NoteColors.inkIsDark(fill)) 0.78f else 0.9f
+    val container = ov.compositeOver(background)
+    val strong = (if (NoteColors.inkIsDark(fill)) Color.Black.copy(alpha = 0.2f) else Color.White.copy(alpha = 0.28f)).compositeOver(background)
+    val base = MaterialTheme.colorScheme
+    val scheme = base.copy(
+        primary = ink, onPrimary = background,
+        primaryContainer = container, onPrimaryContainer = ink,
+        secondaryContainer = strong, onSecondaryContainer = ink,
+        tertiaryContainer = container, onTertiaryContainer = ink,
+        surface = background, onSurface = ink, background = background, onBackground = ink,
+        surfaceVariant = container, onSurfaceVariant = ink.copy(alpha = mutedAlpha),
+        surfaceContainerLowest = container, surfaceContainerLow = container, surfaceContainer = container,
+        surfaceContainerHigh = container, surfaceContainerHighest = strong,
+        outline = ink.copy(alpha = 0.55f), outlineVariant = ink.copy(alpha = 0.28f),
+        error = ink, errorContainer = container, onErrorContainer = ink,
+    )
+    CompositionLocalProvider(LocalOnFill provides fill, LocalContentColor provides ink) {
+        MaterialTheme(colorScheme = scheme, typography = MaterialTheme.typography, shapes = MaterialTheme.shapes, content = content)
+    }
 }
