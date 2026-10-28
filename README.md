@@ -26,7 +26,19 @@ jot.example.com {
 }
 ```
 
-### systemd
+### Arch Linux (repo.mooned.de)
+```sh
+sudo pacman -S jot            # with the [mooned] repository set up
+sudo systemctl start jot      # creates /var/lib/jot
+sudo -u jot JOT_DATA=/var/lib/jot jot user add me
+sudo systemctl enable --now jot   # 127.0.0.1:8080, change JOT_ADDR in /etc/jot.env
+```
+Or run it as your own user: `jot user add me --data ~/.local/share/jot && systemctl --user enable --now jot`
+(port 5566, `~/.config/jot.env`). `jot-backup` is included too (it needs restic and sqlite).
+The recipe lives in `packaging/arch/` and builds the committed state of this repository.
+`~/Code/archrepo/publish jot` builds a package and publishes it.
+
+### systemd (manual)
 ```sh
 sudo install -m755 bin/jot /usr/local/bin/jot
 sudo install -m644 deploy/jot.service /etc/systemd/system/

@@ -33,7 +33,7 @@ build() {
   export GOPATH="$srcdir/gopath"
   export CGO_ENABLED=0
   export GOFLAGS='-buildmode=pie -trimpath -mod=readonly -modcacherw'
-  go build -ldflags '-s -w' -o jot .
+  go build -o jot .
 }
 
 check() {
