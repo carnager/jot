@@ -42,7 +42,9 @@ func formatDue(day time.Time, minutes int) string {
 	return day.Add(time.Duration(minutes) * time.Minute).Format("2006-01-02T15:04")
 }
 
-func civilDate(t time.Time) time.Time { return time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, time.UTC) }
+func civilDate(t time.Time) time.Time {
+	return time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, time.UTC)
+}
 
 func daysIn(year int, month time.Month) int {
 	return time.Date(year, month+1, 0, 0, 0, 0, 0, time.UTC).Day()

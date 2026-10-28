@@ -1,4 +1,4 @@
-.PHONY: server test web-test android android-release run deploy backup-install
+.PHONY: demo server test web-test android android-release run deploy backup-install
 
 server:
 	cd server && CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o ../bin/jot .
@@ -33,3 +33,11 @@ backup-install:
 	scp -q deploy/backup.sh proteus:.local/bin/jot-backup
 	scp -q deploy/jot-backup.service deploy/jot-backup.timer proteus:.config/systemd/user/
 	ssh proteus 'systemctl --user daemon-reload && systemctl --user start jot-backup.service && journalctl --user -u jot-backup -n 3 --no-pager -o cat && systemctl --user enable --now jot-backup.timer'
+
+# Sample data for screenshots in a throwaway server: http://localhost:8090, login demo / demo1234.
+# Dates are relative to today; run it again to refresh them.
+demo: server
+	rm -rf demo-data
+	JOT_PASSWORD=demo1234 ./bin/jot user add demo --data demo-data
+	./bin/jot seed-demo demo --data demo-data
+	./bin/jot serve --data demo-data --addr :8090

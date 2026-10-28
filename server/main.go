@@ -27,6 +27,7 @@ Usage:
   jot user del <name>          delete a user and all their items
   jot user list
   jot import-keep <user> <takeout.zip|dir>   import Google Keep notes from Takeout
+  jot seed-demo <user>         fill an account with sample data for screenshots
 
 Global flags (all commands, any position):
   --data DIR   data directory (default $JOT_DATA or ./data)
@@ -90,6 +91,12 @@ func main() {
 			err = errors.New("usage: jot import-keep <user> <takeout.zip|dir>")
 		} else {
 			err = importKeep(store, rest[0], rest[1])
+		}
+	case "seed-demo":
+		if len(rest) != 1 {
+			err = errors.New("usage: jot seed-demo <user>")
+		} else {
+			err = seedDemo(store, rest[0])
 		}
 	default:
 		fs.Usage()
