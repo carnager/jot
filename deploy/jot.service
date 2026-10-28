@@ -1,0 +1,21 @@
+[Unit]
+Description=Jot notes & todos server
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+DynamicUser=yes
+Environment=JOT_ADDR=127.0.0.1:8080
+Environment=JOT_DATA=/var/lib/jot
+ExecStart=/usr/local/bin/jot serve
+Restart=on-failure
+StateDirectory=jot
+StateDirectoryMode=0700
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,20 @@
+{
+  "comment": "complete(item, now) for repeating items. expect.due is the new due; expect.done=true means it was completed for good.",
+  "cases": [
+    { "name": "daily timed", "due": "2026-10-28T09:00", "repeat": { "freq": "day", "interval": 1 }, "now": "2026-10-28T14:00", "expect": { "due": "2026-10-29T09:00" } },
+    { "name": "daily overdue catches up", "due": "2026-10-20", "repeat": { "freq": "day", "interval": 1 }, "now": "2026-10-28T14:00", "expect": { "due": "2026-10-29" } },
+    { "name": "timed overdue catches up to later today", "due": "2026-10-21T18:00", "repeat": { "freq": "week", "interval": 1 }, "now": "2026-10-28T14:00", "expect": { "due": "2026-10-28T18:00" } },
+    { "name": "weekly byDay", "due": "2026-10-29", "repeat": { "freq": "week", "interval": 1, "byDay": ["mo", "th"] }, "now": "2026-10-28T14:00", "expect": { "due": "2026-11-02" } },
+    { "name": "biweekly byDay jumps", "due": "2026-10-29", "repeat": { "freq": "week", "interval": 2, "byDay": ["mo", "th"] }, "now": "2026-10-28T14:00", "expect": { "due": "2026-11-09" } },
+    { "name": "biweekly byDay within week", "due": "2026-10-26", "repeat": { "freq": "week", "interval": 2, "byDay": ["mo", "th"] }, "now": "2026-10-26T08:00", "expect": { "due": "2026-10-29" } },
+    { "name": "weekly plain", "due": "2026-10-28", "repeat": { "freq": "week", "interval": 1 }, "now": "2026-10-28T14:00", "expect": { "due": "2026-11-04" } },
+    { "name": "monthly clamps", "due": "2026-01-31", "repeat": { "freq": "month", "interval": 1, "monthDay": 31 }, "now": "2026-01-31T10:00", "expect": { "due": "2026-02-28" } },
+    { "name": "monthly restores monthDay", "due": "2026-02-28", "repeat": { "freq": "month", "interval": 1, "monthDay": 31 }, "now": "2026-02-28T10:00", "expect": { "due": "2026-03-31" } },
+    { "name": "quarterly", "due": "2026-10-15T10:00", "repeat": { "freq": "month", "interval": 3 }, "now": "2026-10-15T11:00", "expect": { "due": "2027-01-15T10:00" } },
+    { "name": "yearly leap", "due": "2028-02-29", "repeat": { "freq": "year", "interval": 1 }, "now": "2028-02-29T09:00", "expect": { "due": "2029-02-28" } },
+    { "name": "from completion", "due": "2026-10-20", "repeat": { "freq": "day", "interval": 3, "fromCompletion": true }, "now": "2026-10-28T14:00", "expect": { "due": "2026-10-31" } },
+    { "name": "from completion early", "due": "2026-11-05", "repeat": { "freq": "week", "interval": 1, "fromCompletion": true }, "now": "2026-10-28T14:00", "expect": { "due": "2026-11-04" } },
+    { "name": "until ends", "due": "2026-10-28", "repeat": { "freq": "day", "interval": 1, "until": "2026-10-28" }, "now": "2026-10-28T14:00", "expect": { "done": true } },
+    { "name": "until not yet", "due": "2026-10-27", "repeat": { "freq": "day", "interval": 1, "until": "2026-10-30" }, "now": "2026-10-28T14:00", "expect": { "due": "2026-10-29" } }
+  ]
+}

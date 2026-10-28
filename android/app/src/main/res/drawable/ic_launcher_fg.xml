@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp" android:height="108dp" android:viewportWidth="108" android:viewportHeight="108">
+    <!-- Card with the top-right corner folded. -->
+    <path android:fillColor="#FFFFFFFF"
+        android:pathData="M40,31 H62 L75,44 V71 Q75,77 69,77 H40 Q34,77 34,71 V37 Q34,31 40,31 Z" />
+    <path android:fillColor="#FFFFE0B2"
+        android:pathData="M62,31 L75,44 H66 Q62,44 62,40 Z" />
+    <!-- Check mark. -->
+    <path android:strokeColor="#FFE07B00" android:strokeWidth="5.5" android:strokeLineCap="round" android:strokeLineJoin="round"
+        android:fillColor="#00000000" android:pathData="M43,57 L51,65 L66,49" />
+</vector>

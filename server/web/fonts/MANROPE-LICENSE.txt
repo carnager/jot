@@ -1,0 +1,3 @@
+Manrope is licensed under the SIL Open Font License, Version 1.1.
+Copyright (c) 2018-2023 Mikhail Sharanda (https://manropefont.com)
+Full license text: https://scripts.sil.org/OFL

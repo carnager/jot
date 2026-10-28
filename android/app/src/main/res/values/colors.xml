@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="window">#FFFFF8F1</color>
+    <color name="icon_bg">#FFF6A623</color>
+    <color name="icon_dark">#FF8A5100</color>
+    <color name="widget_bg">#FFFFF8F1</color>
+    <color name="widget_text">#FF201A15</color>
+    <color name="widget_sub">#FF6E6259</color>
+    <color name="widget_accent">#FF8A5100</color>
+    <color name="widget_alert">#FFBA1A1A</color>
+</resources>
