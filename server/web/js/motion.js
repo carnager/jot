@@ -19,6 +19,9 @@ export function after(a, done) {
   const once = () => { if (!called) { called = true; done(); } };
   a.onfinish = once;
   a.oncancel = once;
+  // Safety net: background tabs can stall animations; never leave an overlay or ghost behind.
+  const t = a.effect?.getTiming?.() || {};
+  setTimeout(once, (+t.duration || 300) + (+t.delay || 0) + 250);
 }
 
 export function fadeIn(el, { y = 6, duration = 200, delay = 0 } = {}) {

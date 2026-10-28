@@ -12,6 +12,7 @@ import {
 import * as act from './actions.js';
 import { keyedFlip, fadeIn, bump, measure, reduced, anim } from './motion.js';
 import { ART } from './art.js';
+import { cardImages, rowThumb } from './images.js';
 
 const VIEWS = {
   today: { title: 'Today', icon: 'sun', key: 't', tone: 'amber' },
@@ -367,18 +368,19 @@ function buildCard(it) {
     ];
   const meta = [dueChip(it), it.labels?.map((l) => labelChip(l))].flat().filter(Boolean);
   return h('div', {
-    class: ['card', it.pinned && 'pinned'],
+    class: ['card', it.pinned && 'pinned', it.images?.length && 'has-images', it.images?.length && !it.title && !it.body && !(it.checks || []).length && 'only-images'],
     'data-id': it.id,
     'data-k': it.id,
     'data-color': it.color || null,
     draggable: inTrash ? null : 'true',
   },
-  !inTrash && h('button', { class: ['icon-btn sm card-pin', it.pinned && 'on'], 'data-act': 'pin', title: it.pinned ? 'Unpin (p)' : 'Pin (p)' }, icon('pin', 15)),
+  cardImages(it),
+  !inTrash && h('button', { class: ['icon-btn sm card-pin', it.pinned && 'on', it.images?.length && 'over-img'], 'data-act': 'pin', title: it.pinned ? 'Unpin (p)' : 'Pin (p)' }, icon('pin', 15)),
   task && it.title
     ? h('div', { class: 'card-task' }, checkButton(it), titleEl)
     : titleEl,
   cardBody(it),
-  !it.title && !it.body && !(it.checks || []).length ? h('div', { class: 'card-body short empty-note' }, 'Empty note') : null,
+  !it.title && !it.body && !(it.checks || []).length && !(it.images || []).length ? h('div', { class: 'card-body short empty-note' }, 'Empty note') : null,
   meta.length ? h('div', { class: 'card-meta' }, meta) : null,
   h('div', { class: 'card-tools' }, tools));
 }
@@ -412,9 +414,10 @@ function buildRow(it, { showDate = false } = {}) {
   return h('div', { class: ['row', it.done && 'is-done'], 'data-id': it.id, 'data-k': it.id, 'data-color': it.color || null, draggable: 'true' },
     checkButton(it),
     h('div', { class: 'row-main' },
-      h('div', { class: 'row-title' }, it.title || h('span', { class: 'empty' }, firstLine(it) || 'Untitled')),
+      h('div', { class: 'row-title' }, it.title || h('span', { class: 'empty' }, firstLine(it) || (it.images?.length ? 'Image' : 'Untitled'))),
       preview && it.title ? h('div', { class: 'row-preview' }, preview) : null,
       chips.length ? h('div', { class: 'row-sub' }, chips) : null),
+    rowThumb(it),
     h('div', { class: 'row-tools' },
       h('button', { class: 'icon-btn', 'data-act': 'date', title: 'Reschedule (d)' }, icon('calendar', 15)),
       h('button', { class: 'icon-btn', 'data-act': 'tomorrow', title: 'Tomorrow (t)' }, icon('forward', 15)),

@@ -6,7 +6,9 @@ import {
   renderSidebar, renderTopbar, renderView, renderStatus, applyStates, layoutGrids, observeLayout,
   scrollCursorIntoView, isListView, viewTitle, VIEWS,
 } from './views.js';
-import { mountCapture, focusCapture, refreshCapture, newBlank } from './capture.js';
+import { mountCapture, focusCapture, refreshCapture, newBlank, createImageNote } from './capture.js';
+import { openLightbox, lightboxOpen } from './lightbox.js';
+import { ingest, resumeUploads } from './images.js';
 import { mountEditor, openEditor, closeEditor, itemMenu, editorHasFocus } from './editor.js';
 import { datePop, labelPop, colorPop, closePop, popOpen, anchorFor, promptPop } from './popovers.js';
 import { openPalette, paletteOpen } from './palette.js';
@@ -311,7 +313,7 @@ function modalOpen() {
 
 document.addEventListener('keydown', (e) => {
   const mod = e.ctrlKey || e.metaKey;
-  if (!document.getElementById('login').hidden) return;
+  if (!document.getElementById('login').hidden || lightboxOpen()) return;
 
   if (mod && e.key.toLowerCase() === 'k') {
     e.preventDefault();
@@ -439,6 +441,7 @@ function onViewClick(e) {
       case 'restore': act.restore(ids); break;
       case 'delforever': act.deleteForever(ids); break;
       case 'golabel': go({ type: 'label', label: actEl.dataset.label }); break;
+      case 'image': openLightbox(store.get(id)?.images, +actEl.dataset.index || 0, actEl); break;
       case 'check': {
         const cid = actEl.dataset.check;
         store.update(id, (it) => ({ checks: it.checks.map((c) => (c.id === cid ? { ...c, done: !c.done } : c)) }));
@@ -541,6 +544,42 @@ function setupDnD() {
     else if (d === 'done') { if (!ids.every((id) => store.get(id)?.done)) act.toggleComplete(ids); }
     else if (d === 'notes') store.updateMany(ids, { archived: false, trashedAt: 0 });
     t.classList.remove('drop');
+  });
+}
+
+// ---------- image files dropped from the desktop ----------
+const hasFiles = (e) => [...(e.dataTransfer?.types || [])].includes('Files');
+
+function setupFileDrop() {
+  const overlay = h('div', { class: 'drop-overlay', hidden: true },
+    h('div', { class: 'drop-card' }, icon('imageplus', 28), h('b', null, 'Drop images to create a note'), h('span', null, 'or drop them onto a card to add them there')));
+  document.body.append(overlay);
+  let hideTimer = 0;
+  const view = document.getElementById('view');
+  document.addEventListener('dragover', (e) => {
+    if (!hasFiles(e) || dragIds) return;
+    e.preventDefault();
+    clearTimeout(hideTimer);
+    const card = e.target.closest?.('#view .card[data-id], #view .row[data-id]');
+    view.querySelectorAll('.file-over').forEach((n) => n !== card && n.classList.remove('file-over'));
+    if (card) { card.classList.add('file-over'); e.dataTransfer.dropEffect = 'copy'; }
+    const overEditor = e.target.closest?.('#editor');
+    overlay.hidden = !!card || !!overEditor;
+    hideTimer = setTimeout(() => { overlay.hidden = true; view.querySelectorAll('.file-over').forEach((n) => n.classList.remove('file-over')); }, 150);
+  });
+  document.addEventListener('drop', async (e) => {
+    if (!hasFiles(e) || dragIds || e.defaultPrevented) return;
+    e.preventDefault();
+    overlay.hidden = true;
+    const card = e.target.closest?.('#view .card[data-id], #view .row[data-id]');
+    view.querySelectorAll('.file-over').forEach((n) => n.classList.remove('file-over'));
+    if (card) {
+      const id = card.dataset.id;
+      const refs = await ingest(e.dataTransfer.files);
+      if (refs.length) { act.addImages(id, refs); toast(refs.length === 1 ? 'Image added' : `${refs.length} images added`); }
+      return;
+    }
+    createImageNote(e.dataTransfer.files, { open: true });
   });
 }
 
@@ -858,6 +897,7 @@ function start() {
     mountEditor();
     observeLayout();
     setupDnD();
+    setupFileDrop();
     document.getElementById('view').addEventListener('click', onViewClick);
     document.getElementById('scrim').addEventListener('click', () => document.getElementById('app').classList.remove('nav-open'));
     store.on('change', () => render());
@@ -876,6 +916,7 @@ function start() {
   renderNow();
   store.sync();
   store.startEvents();
+  resumeUploads();
   checkReminders();
 }
 

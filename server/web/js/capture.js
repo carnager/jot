@@ -7,6 +7,7 @@ import { newItem } from './model.js';
 import { ui, hooks } from './ui.js';
 import { toast } from './toast.js';
 import { keyedFlip, anim, after } from './motion.js';
+import { ingest, imageFiles } from './images.js';
 
 let ta, hl, chips;
 let ignore = new Set();
@@ -24,7 +25,11 @@ export function mountCapture() {
     oninput: update,
     onkeydown: onKey,
     onscroll: () => { hl.scrollTop = ta.scrollTop; },
-    onpaste: () => setTimeout(update),
+    onpaste: (e) => {
+      const files = imageFiles(e.clipboardData?.files);
+      if (files.length) { e.preventDefault(); createImageNote(files, { useText: true }); return; }
+      setTimeout(update);
+    },
   });
   hl = h('div', { class: 'capture-hl', 'aria-hidden': 'true' });
   chips = h('div', { class: 'capture-chips' });
@@ -238,3 +243,29 @@ function newBlank(kind) {
 }
 
 export { newBlank };
+
+/**
+ * New note from image files (pasted into the bar, or dropped onto the page). The capture text, if any,
+ * becomes its title/labels/date like a normal capture; the view context (label, day) applies too.
+ */
+export async function createImageNote(files, { useText = false, open = false } = {}) {
+  const refs = await ingest(files);
+  if (!refs.length) return null;
+  const ctx = context();
+  const r = useText && ta.value.trim() ? last : null;
+  const labels = new Set(r?.labels || []);
+  if (ctx.label) labels.add(ctx.label);
+  let due = r?.due || '';
+  if (!due && ctx.day != null) due = fmtDay(ctx.day);
+  const item = newItem({
+    title: r?.title || '', kind: r?.kind || 'note', checks: r?.checks || [], labels: [...labels].sort(),
+    due, repeat: r?.repeat || null, pinned: !!r?.pinned, images: refs,
+  });
+  store.put(item);
+  if (r) { ta.value = ''; ignore = new Set(); update(); }
+  ui.cursor = item.id;
+  hooks.render();
+  if (open) hooks.openEditor(item.id, 'title');
+  else toast(refs.length === 1 ? 'Added a note with an image' : `Added a note with ${refs.length} images`, null, { timeout: 2500 });
+  return item;
+}

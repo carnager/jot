@@ -9,6 +9,8 @@ import { datePop, labelPop, colorPop, menu } from './popovers.js';
 import { lsGet, lsSet } from './util.js';
 import { keyedFlip, flipAround, anim, after, reduced, EASE_IN } from './motion.js';
 import { layoutGrids } from './views.js';
+import { ingest, imageFiles, imgEl, thumbWidth, ratio } from './images.js';
+import { openLightbox } from './lightbox.js';
 
 let panel, id = null;
 let wasNonEmpty = false; // the open item had text when the editor opened
@@ -19,6 +21,7 @@ let dragFrom = null;
 
 export function mountEditor() {
   panel = document.getElementById('editor');
+  setupImageInput();
   store.on('change', (e) => {
     if (!id) return;
     const it = store.get(id);
@@ -153,6 +156,8 @@ function build(it) {
   taskCheckEl = h('span');
   metaEl = h('div', { class: 'ed-meta' });
   bannerEl = h('div');
+  imagesEl = h('div', { class: 'ed-images' });
+  imagesSig = null;
   stampEl = h('span', { class: 'stamp' });
   let content;
   if (it.kind === 'list') {
@@ -185,12 +190,14 @@ function build(it) {
       btn('x', 'Close (Esc)', () => closeEditor())),
     h('div', { class: 'ed-scroll' },
       bannerEl,
+      imagesEl,
       h('div', { class: 'ed-taskline' }, taskCheckEl, titleEl),
       metaEl,
       content),
     h('div', { class: 'ed-foot' },
       btn('calendar', 'Date & repeat (d)', (e) => datePop([id], e.currentTarget)),
       btn('tag', 'Labels (l)', (e) => labelPop([id], e.currentTarget)),
+      btn('imageplus', 'Add image (or paste / drop one here)', () => pickImages()),
       btn('palette', 'Color (c)', (e) => colorPop([id], e.currentTarget)),
       btn(it.kind === 'list' ? 'text' : 'list', it.kind === 'list' ? 'Convert to note' : 'Convert to checklist', () => { act.convertKind(id); build(cur()); autosizeAll(); }),
       btn(it.archived ? 'unarchive' : 'archive', it.archived ? 'Unarchive (a)' : 'Archive (a)', () => act.toggleArchive([id]), { id: 'ed-arch' }),
@@ -261,8 +268,68 @@ function renderChrome(it) {
   }
   if (!it.trashedAt) chips.push(h('button', { class: 'chip add', onclick: (e) => labelPop([id], e.currentTarget) }, icon('tag', 13), (it.labels || []).length ? '' : 'Add label'));
   fill(metaEl, ...chips);
+  renderImages(it);
   renderStamp(it);
 }
+
+// ======================= images =======================
+
+let imagesEl = null, imagesSig = null;
+
+function renderImages(it) {
+  const imgs = it.images || [];
+  const sig = imgs.map((x) => x.id).join(',');
+  if (sig === imagesSig) return;
+  const first = imagesSig === null;
+  imagesSig = sig;
+  const draw = () => fill(imagesEl, ...imgs.map((ref, i) => h('div', { class: 'ed-img', 'data-k': ref.id, style: { aspectRatio: imgs.length === 1 ? String(ratio(ref, 0.5, 2.6)) : '1' } },
+    h('button', { class: 'ed-img-open', title: 'View (opens full screen)', onclick: (e) => openLightbox(cur().images, i, e.currentTarget) }, imgEl(ref, thumbWidth(imgs.length === 1 ? 440 : 220))),
+    h('button', { class: 'ed-img-del', title: 'Remove image', onclick: () => act.removeImage(id, ref.id) }, icon('x', 15)))));
+  imagesEl.classList.toggle('multi', imgs.length > 1);
+  imagesEl.hidden = !imgs.length;
+  if (first) draw(); else keyedFlip(imagesEl, 'data-k', draw);
+}
+
+async function addFiles(files) {
+  const target = id;
+  const refs = await ingest(files);
+  if (refs.length && store.get(target)) act.addImages(target, refs);
+}
+
+function pickImages() {
+  const input = h('input', { type: 'file', accept: 'image/*', multiple: true, style: { display: 'none' } });
+  input.addEventListener('change', () => { addFiles(input.files); input.remove(); });
+  document.body.append(input);
+  input.click();
+}
+
+function setupImageInput() {
+  panel.addEventListener('paste', (e) => {
+    if (!id) return;
+    const files = imageFiles(e.clipboardData?.files);
+    if (!files.length) return;
+    e.preventDefault();
+    addFiles(files);
+  });
+  const hasFiles = (e) => [...(e.dataTransfer?.types || [])].includes('Files');
+  panel.addEventListener('dragover', (e) => {
+    if (!id || !hasFiles(e)) return;
+    e.preventDefault();
+    e.stopPropagation();
+    e.dataTransfer.dropEffect = 'copy';
+    panel.classList.add('file-over');
+  });
+  panel.addEventListener('dragleave', (e) => { if (!panel.contains(e.relatedTarget)) panel.classList.remove('file-over'); });
+  panel.addEventListener('drop', (e) => {
+    panel.classList.remove('file-over');
+    if (!id || !hasFiles(e)) return;
+    e.preventDefault();
+    e.stopPropagation();
+    addFiles(e.dataTransfer.files);
+  });
+}
+
+export const editorAddFiles = (files) => addFiles(files);
 
 function renderStamp(it) {
   const mins = Math.round((Date.now() - it.updatedAt) / 60000);

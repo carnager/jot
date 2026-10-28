@@ -5,7 +5,8 @@ const CACHE_KEY = 'jot.cache.v1';
 
 /** No text anywhere: such items are never worth keeping. */
 export function isEmpty(it) {
-  return !(it.title || '').trim() && !(it.body || '').trim() && !(it.checks || []).some((c) => (c.text || '').trim());
+  return !(it.title || '').trim() && !(it.body || '').trim() && !(it.checks || []).some((c) => (c.text || '').trim())
+    && !(it.images || []).length;
 }
 const PUSH_DELAY = 400;
 
@@ -162,7 +163,8 @@ class Store {
   }
 
   async _sync() {
-    const ids = [...this.dirty];
+    // Items whose images are still uploading wait (SPEC §2a: upload first, then push the item).
+    const ids = [...this.dirty].filter((id) => { const it = this.items.get(id); return !it || !this.holdBack?.(it); });
     const sentGen = new Map(ids.map((id) => [id, this.gen.get(id) || 0]));
     const changes = ids.map((id) => this.items.get(id)).filter(Boolean);
     this.setStatus('syncing');
@@ -209,8 +211,10 @@ class Store {
     if (typeof data.rev === 'number' && data.rev > this.since) this.since = data.rev;
     this.lastSyncAt = Date.now();
     this.persist();
+    const waiting = [...this.dirty].some((id) => !ids.includes(id));
     this.setStatus(this.dirty.size ? 'syncing' : 'idle');
-    if (this.dirty.size) this.schedulePush();
+    // Held-back items are pushed by the upload pump; don't spin on them here.
+    if (this.dirty.size && !waiting) this.schedulePush();
     if (changed.length) this.emit('change', { ids: changed, remote: true });
     this.emit('synced', null);
   }

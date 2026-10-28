@@ -184,3 +184,15 @@ export function moveToDay(ids, day) {
     store.updateMany(ids, (it) => ({ due: fmtDue(day, parseDue(it.due)?.min ?? null), snoozedUntil: '', done: it.repeat ? it.done : false }));
   });
 }
+
+/** Append image refs (already queued for upload) to an item. */
+export function addImages(id, refs) {
+  if (!refs.length) return;
+  store.update(id, (it) => ({ images: [...(it.images || []), ...refs] }));
+}
+
+export function removeImage(id, imageId) {
+  withUndo([id], 'Image removed', () => {
+    store.update(id, (it) => ({ images: (it.images || []).filter((x) => x.id !== imageId) }));
+  });
+}
