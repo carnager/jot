@@ -187,7 +187,10 @@ fun SettingsScreen(onBack: () -> Unit, requestNotifications: () -> Unit) {
                             ctx.startActivity(Intent(AndroidSettings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(AndroidSettings.EXTRA_APP_PACKAGE, ctx.packageName))
                         }) { Text("Allow") }
                     }
-                    SettingRow("All-day tasks remind at", Fmt.time(prefs.allDayTime), onClick = { timeDialog = true })
+                    SettingRow(
+                        "All-day tasks remind at", Fmt.time(prefs.allDayTime) + if (prefs.signedIn) " · synced with your other devices" else "",
+                        onClick = { timeDialog = true },
+                    )
                     Text("Snooze", style = MaterialTheme.typography.bodyLarge, modifier = Modifier.padding(top = 8.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         listOf(15, 30, 60, 120, 180).forEach { m ->
@@ -198,6 +201,17 @@ fun SettingsScreen(onBack: () -> Unit, requestNotifications: () -> Unit) {
                             )
                         }
                     }
+                }
+                if (prefs.signedIn) Group("Desktop reminders") {
+                    Text(
+                        "Desktop reminders via ntfy can be set up in the web app (Settings → Reminders).",
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        "Don't subscribe to that ntfy topic on this phone: Jot already reminds you here, so you'd get every reminder twice.",
+                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
                 }
                 Group("Appearance") {
                     ThemeSegments(listOf("System", "Light", "Dark"), prefs.theme.ordinal) { i ->
@@ -221,7 +235,7 @@ fun SettingsScreen(onBack: () -> Unit, requestNotifications: () -> Unit) {
 
     if (timeDialog) TimeDialog(
         prefs.allDayTime, onDismiss = { timeDialog = false }, onAllDay = { timeDialog = false },
-        onTime = { t: LocalTime -> timeDialog = false; Repo.settings.update { it.copy(allDayMinutes = t.hour * 60 + t.minute) } },
+        onTime = { t: LocalTime -> timeDialog = false; Repo.setAllDayTime(t.hour * 60 + t.minute) },
     )
     if (signOut) AlertDialog(
         onDismissRequest = { signOut = false },

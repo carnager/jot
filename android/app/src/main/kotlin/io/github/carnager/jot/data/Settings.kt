@@ -37,6 +37,16 @@ class Settings(context: Context) {
         get() = sp.getLong("since", 0)
         set(v) { sp.edit().putLong("since", v).apply() }
 
+    /** The server's settings object (SPEC §2c), cached for offline use. */
+    var serverSettings: String
+        get() = sp.getString("serverSettings", "") ?: ""
+        set(v) { sp.edit().putString("serverSettings", v).apply() }
+
+    /** The all-day time was changed here while offline and still has to be PUT. */
+    var allDayDirty: Boolean
+        get() = sp.getBoolean("allDayDirty", false)
+        set(v) { sp.edit().putBoolean("allDayDirty", v).apply() }
+
     var lastView: String
         get() = sp.getString("lastView", "notes") ?: "notes"
         set(v) { sp.edit().putString("lastView", v).apply() }
@@ -77,9 +87,17 @@ class Settings(context: Context) {
         _prefs.value = p
     }
 
-    /** Reminders already shown, so a fire time is notified only once: id → fire key. */
-    fun shownKey(id: String): String? = sp.getString("shown:$id", null)
-    fun setShown(id: String, key: String) { sp.edit().putString("shown:$id", key).apply() }
+    /** Fire times already notified, so each (item, fire time) shows once. */
+    private val shownPrefs: SharedPreferences = context.getSharedPreferences("jot-shown", Context.MODE_PRIVATE)
+    fun isShown(id: String, key: String): Boolean = shownPrefs.contains("$id|$key")
+    fun setShown(id: String, key: String) { shownPrefs.edit().putLong("$id|$key", System.currentTimeMillis()).apply() }
+
+    /** Forgets shown marks older than two weeks. */
+    fun pruneShown() {
+        val cutoff = System.currentTimeMillis() - 14L * 86_400_000
+        val old = shownPrefs.all.filter { (it.value as? Long ?: 0L) < cutoff }.keys
+        if (old.isNotEmpty()) shownPrefs.edit().apply { old.forEach { remove(it) } }.apply()
+    }
 
     var scheduledIds: Set<String>
         get() = sp.getStringSet("scheduled", emptySet()) ?: emptySet()

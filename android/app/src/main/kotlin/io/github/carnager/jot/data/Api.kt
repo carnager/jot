@@ -71,6 +71,26 @@ object Api {
         return SyncResponse(r.getLong("rev"), items)
     }
 
+    /** GET /api/settings (SPEC §2c). */
+    suspend fun getSettings(server: String, token: String): JSONObject = withContext(Dispatchers.IO) {
+        val req = Request.Builder().url("$server/api/settings").header("Authorization", "Bearer $token").build()
+        client.newCall(req).execute().use { resp ->
+            if (!resp.isSuccessful) throw ApiException(resp.code, "HTTP ${resp.code}")
+            JSONObject(resp.body.string())
+        }
+    }
+
+    /** PUT /api/settings with the whole object, so keys this client doesn't know survive. */
+    suspend fun putSettings(server: String, token: String, settings: JSONObject): JSONObject = withContext(Dispatchers.IO) {
+        val req = Request.Builder().url("$server/api/settings").header("Authorization", "Bearer $token")
+            .put(settings.toString().toRequestBody(JSON)).build()
+        client.newCall(req).execute().use { resp ->
+            if (!resp.isSuccessful) throw ApiException(resp.code, "HTTP ${resp.code}")
+            val text = resp.body.string()
+            if (text.isBlank()) settings else JSONObject(text)
+        }
+    }
+
     /** PUT /api/attachments/{id} (idempotent). */
     suspend fun upload(server: String, token: String, id: String, file: java.io.File, mime: String) = withContext(Dispatchers.IO) {
         val req = Request.Builder()

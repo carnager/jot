@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.material.icons.outlined.AddPhotoAlternate
 import androidx.compose.material.icons.outlined.PhotoCamera
+import androidx.compose.material.icons.outlined.NotificationsActive
 import androidx.compose.material.icons.outlined.PhotoLibrary
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateContentSize
@@ -364,6 +365,7 @@ fun Editor(id: String, actions: AppActions, focusTitle: Boolean, onBack: () -> U
             onDue = { d -> Repo.setDue(listOf(id), d) },
             onRepeat = { r -> save { it.copy(repeat = r, due = if (r != null && it.due.isEmpty()) java.time.LocalDate.now().toString() else it.due) } },
             onRemind = { on -> save { it.copy(remind = on) } },
+            onAlerts = { a -> save { it.copy(alerts = a) } },
         )
         "repeat" -> RepeatDialog(item.repeat, item.due, onDismiss = { sheet = null }) { r ->
             sheet = null
@@ -418,6 +420,9 @@ private fun MetaChips(item: Item, onDate: () -> Unit, onRepeat: () -> Unit, onLa
     ) {
         if (item.due.isNotEmpty()) MetaPill(Icons.Outlined.Event, Fmt.dueShort(item.due), filled = true, alert = Fmt.isOverdue(item), onClick = onDate)
         else MetaPill(Icons.Outlined.Event, "Add date", filled = false, onClick = onDate)
+        if (item.due.isNotEmpty() && item.remind && !io.github.carnager.jot.model.Alerts.isDefault(item.alerts)) {
+            MetaPill(Icons.Outlined.NotificationsActive, io.github.carnager.jot.model.Alerts.describe(item.alerts, item.dueTime == null), filled = true, onClick = onDate)
+        }
         if (item.repeat != null) MetaPill(Icons.Outlined.Repeat, Repeats.describe(item.repeat), filled = true, onClick = onRepeat)
         item.labels.forEach { l -> MetaPill(null, "#$l", filled = true, tint = scheme.primary, onClick = onLabels) }
         if (item.labels.isEmpty()) MetaPill(Icons.Rounded.Add, "Label", filled = false, onClick = onLabels)

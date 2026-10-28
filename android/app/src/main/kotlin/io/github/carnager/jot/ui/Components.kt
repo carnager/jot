@@ -44,6 +44,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Alarm
 import androidx.compose.material.icons.rounded.Checklist
+import androidx.compose.material.icons.rounded.NotificationsActive
 import androidx.compose.material.icons.rounded.PushPin
 import androidx.compose.material.icons.rounded.Repeat
 import androidx.compose.material.icons.rounded.Schedule
@@ -186,7 +187,7 @@ fun ItemMeta(item: Item, showDate: Boolean = true, showTime: Boolean = true, con
         showTime -> item.dueTime?.let { Fmt.time(it) } ?: ""
         else -> ""
     }
-    val hasAny = dueText.isNotEmpty() || item.repeat != null || item.labels.isNotEmpty() ||
+    val hasAny = dueText.isNotEmpty() || item.repeat != null || !io.github.carnager.jot.model.Alerts.isDefault(item.alerts) || item.labels.isNotEmpty() ||
         (item.isList && item.checks.isNotEmpty()) || (item.snoozedUntil.isNotEmpty() && !item.done)
     if (!hasAny) return
     FlowRow(
@@ -200,6 +201,10 @@ fun ItemMeta(item: Item, showDate: Boolean = true, showTime: Boolean = true, con
         )
         if (item.snoozedUntil.isNotEmpty() && !item.done) MetaChip(Icons.Rounded.Alarm, Fmt.dueShort(item.snoozedUntil), content)
         if (item.repeat != null) MetaChip(Icons.Rounded.Repeat, "", content)
+        // A bell when more than the default "on time" alert is set.
+        if (item.due.isNotEmpty() && item.remind && !io.github.carnager.jot.model.Alerts.isDefault(item.alerts)) {
+            MetaChip(Icons.Rounded.NotificationsActive, io.github.carnager.jot.model.Alerts.norm(item.alerts).size.toString(), content)
+        }
         if (item.isList && item.checks.isNotEmpty()) {
             MetaChip(Icons.Rounded.Checklist, "${item.checks.count { it.done }}/${item.checks.size}", content)
         }

@@ -7,7 +7,22 @@ import java.time.LocalDateTime
 import java.time.LocalTime
 import java.time.format.DateTimeFormatter
 
-data class Check(val id: String, val text: String, val done: Boolean = false, val indent: Int = 0)
+/**
+ * A checklist entry. [u] is the time of its last change (SPEC §2b); a [deleted] check is a tombstone
+ * that only exists so the removal syncs. Items keep tombstones apart in [Item.tombstones].
+ */
+data class Check(
+    val id: String,
+    val text: String,
+    val done: Boolean = false,
+    val indent: Int = 0,
+    val u: Long = 0,
+    val deleted: Boolean = false,
+) {
+    fun toJson(): JSONObject =
+        if (deleted) JSONObject().put("id", id).put("deleted", true).put("u", u)
+        else JSONObject().put("id", id).put("text", text).put("done", done).put("indent", indent).apply { if (u > 0) put("u", u) }
+}
 
 /** An image attachment (SPEC §2a). [w]/[h] give the aspect ratio before the image loads. */
 data class ImageRef(val id: String, val w: Int, val h: Int, val mime: String = "image/jpeg") {
@@ -69,7 +84,10 @@ data class Item(
     val kind: String = "note",
     val title: String = "",
     val body: String = "",
+    /** Live checks only; what every view shows. */
     val checks: List<Check> = emptyList(),
+    /** Removed checks (SPEC §2b), hidden everywhere, written back after the live ones. */
+    val tombstones: List<Check> = emptyList(),
     val images: List<ImageRef> = emptyList(),
     val color: String = "",
     val labels: List<String> = emptyList(),
@@ -80,6 +98,8 @@ data class Item(
     val due: String = "",
     val remind: Boolean = true,
     val snoozedUntil: String = "",
+    /** Minutes before the fire time (SPEC §5); empty means on time only. */
+    val alerts: List<Int> = emptyList(),
     val repeat: Repeat? = null,
     val sort: Double = 0.0,
     val createdAt: Long = 0,
@@ -87,6 +107,8 @@ data class Item(
     val trashedAt: Long = 0,
     val deleted: Boolean = false,
     val rev: Long = 0,
+    /** Field group → time of the last local change (SPEC §2b). */
+    val fm: Map<String, Long> = emptyMap(),
     val raw: String = "{}",
 ) {
     val isList get() = kind == "list"
@@ -115,9 +137,8 @@ data class Item(
         o.put("title", title)
         o.put("body", body)
         o.put("checks", JSONArray().apply {
-            checks.forEach { c ->
-                put(JSONObject().put("id", c.id).put("text", c.text).put("done", c.done).put("indent", c.indent))
-            }
+            checks.forEach { put(it.toJson()) }
+            tombstones.forEach { put(it.toJson()) }
         })
         if (images.isNotEmpty() || o.has("images")) o.put("images", JSONArray().apply { images.forEach { put(it.toJson()) } })
         o.put("color", color)
@@ -129,6 +150,8 @@ data class Item(
         o.put("due", due)
         o.put("remind", remind)
         o.put("snoozedUntil", snoozedUntil)
+        if (alerts.isNotEmpty() || o.has("alerts")) o.put("alerts", JSONArray(alerts))
+        if (fm.isNotEmpty()) o.put("fm", JSONObject().apply { fm.toSortedMap().forEach { (g, t) -> put(g, t) } })
         o.put("repeat", repeat?.toJson() ?: JSONObject.NULL)
         o.put("sort", sort)
         o.put("createdAt", createdAt)
@@ -144,20 +167,26 @@ data class Item(
             val checks = o.optJSONArray("checks")
             val labels = o.optJSONArray("labels")
             val images = o.optJSONArray("images")
+            val parsedChecks = if (checks == null) emptyList() else List(checks.length()) {
+                val c = checks.optJSONObject(it) ?: JSONObject()
+                Check(
+                    id = c.optString("id").ifEmpty { Ids.short() },
+                    text = c.optString("text", ""),
+                    done = c.optBoolean("done", false),
+                    indent = c.optInt("indent", 0).coerceIn(0, 1),
+                    u = c.optLong("u", 0),
+                    deleted = c.optBoolean("deleted", false),
+                )
+            }.distinctBy { it.id }
+            val alerts = o.optJSONArray("alerts")
+            val fm = o.optJSONObject("fm")
             return Item(
                 id = o.getString("id"),
                 kind = if (o.optString("kind") == "list") "list" else "note",
                 title = o.optString("title", ""),
                 body = o.optString("body", ""),
-                checks = if (checks == null) emptyList() else List(checks.length()) {
-                    val c = checks.optJSONObject(it) ?: JSONObject()
-                    Check(
-                        id = c.optString("id").ifEmpty { Ids.short() },
-                        text = c.optString("text", ""),
-                        done = c.optBoolean("done", false),
-                        indent = c.optInt("indent", 0).coerceIn(0, 1),
-                    )
-                },
+                checks = parsedChecks.filter { !it.deleted },
+                tombstones = parsedChecks.filter { it.deleted },
                 images = if (images == null) emptyList() else List(images.length()) { ImageRef.fromJson(images.optJSONObject(it)) }.filterNotNull(),
                 color = o.optString("color", ""),
                 labels = if (labels == null) emptyList() else List(labels.length()) { labels.optString(it) }.filter { it.isNotEmpty() },
@@ -168,6 +197,7 @@ data class Item(
                 due = o.optString("due", "").let { if (Due.date(it) == null) "" else it },
                 remind = o.optBoolean("remind", true),
                 snoozedUntil = o.optString("snoozedUntil", ""),
+                alerts = if (alerts == null) emptyList() else List(alerts.length()) { alerts.optInt(it, 0) },
                 repeat = Repeat.fromJson(o.optJSONObject("repeat")),
                 sort = o.optDouble("sort", 0.0).let { if (it.isNaN()) 0.0 else it },
                 createdAt = o.optLong("createdAt", 0),
@@ -175,6 +205,7 @@ data class Item(
                 trashedAt = o.optLong("trashedAt", 0),
                 deleted = o.optBoolean("deleted", false),
                 rev = o.optLong("rev", 0),
+                fm = if (fm == null) emptyMap() else fm.keys().asSequence().associateWith { fm.optLong(it, 0) },
                 raw = o.toString(),
             )
         }

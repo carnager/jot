@@ -16,6 +16,7 @@ import io.github.carnager.jot.MainActivity
 import io.github.carnager.jot.R
 import io.github.carnager.jot.data.Repo
 import io.github.carnager.jot.data.SyncWorker
+import io.github.carnager.jot.model.Alerts
 import io.github.carnager.jot.model.Due
 import io.github.carnager.jot.model.Item
 import io.github.carnager.jot.ui.Fmt
@@ -29,6 +30,7 @@ object Reminders {
     const val CHANNEL = "reminders"
     const val EXTRA_ID = "id"
     const val EXTRA_KEY = "key"
+    const val EXTRA_MINUTES = "minutes"
     private const val GROUP = "jot.reminders"
     /** Missed reminders older than this are skipped silently instead of popping up all at once. */
     private const val MISSED_WINDOW_HOURS = 12L
@@ -41,24 +43,16 @@ object Reminders {
         nm.createNotificationChannel(ch)
     }
 
-    /** When [item] should notify, or null. */
-    fun fireTime(item: Item, allDay: java.time.LocalTime): LocalDateTime? {
-        if (!item.remind || item.done || item.archived || !item.live || item.due.isEmpty()) return null
-        Due.dateTime(item.snoozedUntil)?.let { return it }
-        val date = item.dueDate ?: return null
-        return LocalDateTime.of(date, item.dueTime ?: allDay)
-    }
-
-    private fun key(t: LocalDateTime) = t.toString()
-
-    private fun pending(context: Context, id: String, key: String?): PendingIntent {
+    private fun pending(context: Context, id: String, minutes: Int, key: String?): PendingIntent {
         val intent = Intent(context, AlarmReceiver::class.java)
-            .setData(Uri.parse("jot://reminder/$id"))
+            .setData(Uri.parse("jot://reminder/$id/$minutes"))
             .putExtra(EXTRA_ID, id)
+            .putExtra(EXTRA_MINUTES, minutes)
         if (key != null) intent.putExtra(EXTRA_KEY, key)
         return PendingIntent.getBroadcast(context, 0, intent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
     }
 
+    /** One exact alarm per fire time (SPEC §5); missed ones within 12 h show right away, each at most once. */
     @Synchronized
     fun reschedule(context: Context, items: List<Item>) {
         val am = context.getSystemService(AlarmManager::class.java)
@@ -68,34 +62,40 @@ object Reminders {
         val zone = ZoneId.systemDefault()
         val scheduled = HashSet<String>()
         for (item in items) {
-            val t = fireTime(item, allDay) ?: continue
-            val k = key(t)
-            if (settings.shownKey(item.id) == k) continue
-            if (t <= now) {
-                // Without permission nothing is marked shown, so it still appears once allowed.
-                if (t <= now.minusHours(MISSED_WINDOW_HOURS) || show(context, item, k)) settings.setShown(item.id, k)
-                continue
+            val fires = Alerts.fireTimes(item, allDay)
+            // Past fire times not shown yet: notify once for the latest of them.
+            val missed = fires.filter { it.at <= now && !settings.isShown(item.id, it.key) }
+            missed.maxByOrNull { it.at }?.let { latest ->
+                val shown = latest.at > now.minusHours(MISSED_WINDOW_HOURS) && show(context, item, latest)
+                if (shown || latest.at <= now.minusHours(MISSED_WINDOW_HOURS)) missed.forEach { settings.setShown(item.id, it.key) }
             }
-            val at = t.atZone(zone).toInstant().toEpochMilli()
-            val pi = pending(context, item.id, k)
-            if (am.canScheduleExactAlarms()) am.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, at, pi)
-            else am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, at, pi)
-            scheduled += item.id
+            for (f in fires) {
+                if (f.at <= now) continue
+                val pi = pending(context, item.id, f.minutesBefore, f.key)
+                val at = f.at.atZone(zone).toInstant().toEpochMilli()
+                if (am.canScheduleExactAlarms()) am.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, at, pi)
+                else am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, at, pi)
+                scheduled += "${item.id}|${f.minutesBefore}"
+            }
         }
-        for (old in settings.scheduledIds - scheduled) am.cancel(pending(context, old, null))
+        for (old in settings.scheduledIds - scheduled) {
+            val id = old.substringBefore('|')
+            val m = old.substringAfter('|', "0").toIntOrNull() ?: 0
+            am.cancel(pending(context, id, m, null))
+        }
         settings.scheduledIds = scheduled
-        // Notifications for items that were completed or rescheduled elsewhere go away.
+        settings.pruneShown()
+        // Notifications whose item no longer has a fire time that has passed (completed, rescheduled, snoozed) go away.
         val nm = NotificationManagerCompat.from(context)
         val byId = items.associateBy { it.id }
         for (sbn in context.getSystemService(NotificationManager::class.java).activeNotifications) {
             val id = sbn.tag ?: continue
             val item = byId[id]
-            if (item == null || fireTime(item, allDay).let { it == null || it > now }) nm.cancel(id, 1)
+            if (item == null || Alerts.fireTimes(item, allDay).none { it.at <= now }) nm.cancel(id, 1)
         }
     }
 
-    /** Posts the reminder; false when notifications aren't allowed. */
-    fun show(context: Context, item: Item, key: String): Boolean {
+    fun show(context: Context, item: Item, fire: Alerts.Fire): Boolean {
         if (context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) return false
         val open = PendingIntent.getActivity(
             context, item.id.hashCode(),
@@ -115,12 +115,17 @@ object Reminders {
         val snooze = Repo.settings.current.snoozeMinutes
         val preview = if (item.isList) item.checks.filter { !it.done }.joinToString(" · ") { it.text } else item.body
         val title = item.title.ifBlank { preview.lineSequence().firstOrNull().orEmpty() }.ifBlank { "Reminder" }
-        val sub = listOfNotNull(Fmt.dueShort(item.due).ifEmpty { null }, item.repeat?.let { "↻" }).joinToString(" ")
+        // An early alert says how long until it's due: "in 30 min · 14:30", "tomorrow 09:00".
+        val dueAt = Due.dateTime(item.due) ?: item.dueDate?.atTime(Repo.settings.current.allDayTime)
+        val whenText = if (fire.minutesBefore > 0 && dueAt != null) {
+            Alerts.leadText(dueAt, LocalDateTime.now()).let { lead -> if (item.dueTime != null && lead.startsWith("in ")) "$lead · " + Fmt.time(item.dueTime!!) else lead }
+        } else Fmt.dueShort(item.due)
+        val sub = listOfNotNull(whenText.ifEmpty { null }, item.repeat?.let { "↻" }).joinToString(" ")
         val n = NotificationCompat.Builder(context, CHANNEL)
             .setSmallIcon(R.drawable.ic_notification)
             .setContentTitle(title)
-            .setContentText(preview.ifBlank { sub })
-            .setSubText(sub.ifEmpty { null })
+            .setContentText(if (fire.minutesBefore > 0) sub + (if (preview.isNotBlank()) " — $preview" else "") else preview.ifBlank { sub })
+            .setSubText(if (fire.minutesBefore > 0) null else sub.ifEmpty { null })
             .setStyle(NotificationCompat.BigTextStyle().bigText(preview.ifBlank { sub }))
             .setCategory(NotificationCompat.CATEGORY_REMINDER)
             .setPriority(NotificationCompat.PRIORITY_HIGH)
@@ -142,9 +147,10 @@ class AlarmReceiver : BroadcastReceiver() {
         val id = intent.getStringExtra(Reminders.EXTRA_ID) ?: return
         val key = intent.getStringExtra(Reminders.EXTRA_KEY) ?: return
         val item = Repo.get(id) ?: return
-        val t = Reminders.fireTime(item, Repo.settings.current.allDayTime) ?: return
-        if (t.toString() != key) return
-        if (Reminders.show(context, item, key)) Repo.settings.setShown(id, key)
+        // Only if this is still one of the item's fire times, and it hasn't been shown yet.
+        val fire = Alerts.fireTimes(item, Repo.settings.current.allDayTime).firstOrNull { it.key == key } ?: return
+        if (Repo.settings.isShown(id, key)) return
+        if (Reminders.show(context, item, fire)) Repo.settings.setShown(id, key)
         TodayWidget.refresh(context)
     }
 }

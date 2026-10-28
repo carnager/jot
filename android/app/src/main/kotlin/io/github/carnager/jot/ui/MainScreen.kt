@@ -411,6 +411,7 @@ fun MainScreen(actions: AppActions, onEdit: (String, Boolean) -> Unit, onSetting
             onDue = { due -> actions.setDue(ids, due); selection = emptySet() },
             onRepeat = if (ids.size == 1) { r -> Repo.update(ids) { it.copy(repeat = r, due = it.due.ifEmpty { LocalDate.now().toString() }) } } else null,
             onRemind = if (ids.size == 1) { on -> Repo.update(ids) { it.copy(remind = on) } } else null,
+            onAlerts = if (ids.size == 1) { a -> Repo.update(ids) { it.copy(alerts = a) } } else null,
         )
     }
     labelsFor?.let { ids ->

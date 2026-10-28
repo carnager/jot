@@ -103,6 +103,7 @@ fun RescheduleSheet(
     onDue: (String) -> Unit,
     onRepeat: ((Repeat?) -> Unit)? = null,
     onRemind: ((Boolean) -> Unit)? = null,
+    onAlerts: ((List<Int>) -> Unit)? = null,
 ) {
     val sheet = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val single = items.singleOrNull()
@@ -189,6 +190,9 @@ fun RescheduleSheet(
                         )
                     }
                 }
+            }
+            if (onAlerts != null && single != null && single.due.isNotEmpty() && single.remind) {
+                AlertsSection(single, onAlerts)
             }
         }
     }
@@ -439,3 +443,40 @@ fun ThemeSegments(options: List<String>, selected: Int, onSelect: (Int) -> Unit)
 
 @Composable
 fun Divider() = HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+
+/** Alerts (SPEC §5): several at once, e.g. "On time · 30 min before". Presets differ for all-day items. */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+fun AlertsSection(item: Item, onAlerts: (List<Int>) -> Unit) {
+    val allDay = item.dueTime == null
+    val presets = if (allDay) io.github.carnager.jot.model.Alerts.PRESETS_ALLDAY else io.github.carnager.jot.model.Alerts.PRESETS_TIMED
+    val current = io.github.carnager.jot.model.Alerts.norm(item.alerts)
+    Column(Modifier.fillMaxWidth().padding(top = 16.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(Icons.Outlined.Notifications, null, Modifier.size(18.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+            Spacer(Modifier.width(8.dp))
+            Text("Alerts", style = MaterialTheme.typography.titleSmall)
+            Spacer(Modifier.width(8.dp))
+            Text(
+                io.github.carnager.jot.model.Alerts.describe(current, allDay),
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+            )
+        }
+        Spacer(Modifier.height(8.dp))
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            presets.forEach { m ->
+                val on = m in current
+                FilterChip(
+                    selected = on,
+                    onClick = {
+                        val next = if (on) current - m else current + m
+                        onAlerts(io.github.carnager.jot.model.Alerts.norm(next).let { if (it == listOf(0)) emptyList() else it })
+                    },
+                    label = { Text(io.github.carnager.jot.model.Alerts.label(m, allDay, short = true)) },
+                    leadingIcon = if (on) ({ Icon(Icons.Rounded.Check, null, Modifier.size(16.dp)) }) else null,
+                )
+            }
+        }
+    }
+}

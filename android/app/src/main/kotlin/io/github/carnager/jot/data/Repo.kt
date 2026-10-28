@@ -4,6 +4,7 @@ import android.content.Context
 import android.os.Build
 import android.util.Log
 import io.github.carnager.jot.model.Due
+import io.github.carnager.jot.model.FieldMerge
 import io.github.carnager.jot.model.Item
 import io.github.carnager.jot.model.Repeats
 import io.github.carnager.jot.notify.Reminders
@@ -104,7 +105,8 @@ object Repo {
         synchronized(lock) {
             for (i in items) {
                 val prev = map[i.id]
-                val stamped = i.copy(updatedAt = maxOf(now, (prev?.updatedAt ?: 0) + 1))
+                // SPEC §2b: field groups and checks are stamped with the same time as updatedAt.
+                val stamped = FieldMerge.write(prev, i, now)
                 map[i.id] = stamped
                 val s = ++seq
                 dirty[i.id] = s
@@ -234,6 +236,7 @@ object Repo {
             writes.send(Rows(rows))
             settings.since = resp.rev
             settings.update { it.copy(lastSync = nowMs, syncError = "") }
+            runCatching { syncSettings() }
             afterChange(sync = false)
             val more = synchronized(lock) { dirty.keys.any { id -> map[id]?.images?.none { Images.isPending(app, it.id) } == true } }
             if (more) requestSync(500)
@@ -250,6 +253,40 @@ object Repo {
         } finally {
             _syncing.value = false
         }
+    }
+
+    // ---- settings (SPEC §2c) ------------------------------------------------------------------
+
+    private val settingsMutex = Mutex()
+
+    /** Pushes a pending local all-day time, then adopts the server's settings. */
+    suspend fun syncSettings() = settingsMutex.withLock {
+        val p = settings.current
+        if (!p.signedIn) return@withLock
+        var remote = Api.getSettings(p.server, p.token)
+        if (settings.allDayDirty) {
+            remote.put("allDayTime", "%02d:%02d".format(p.allDayMinutes / 60, p.allDayMinutes % 60))
+            remote = Api.putSettings(p.server, p.token, remote)
+            settings.allDayDirty = false
+        }
+        settings.serverSettings = remote.toString()
+        val hm = remote.optString("allDayTime", "")
+        val m = Regex("^(\\d{1,2}):(\\d{2})$").find(hm)
+        if (m != null) {
+            val minutes = m.groupValues[1].toInt() * 60 + m.groupValues[2].toInt()
+            if (minutes != p.allDayMinutes && minutes in 0 until 24 * 60) {
+                settings.update { it.copy(allDayMinutes = minutes) }
+                afterChange(sync = false)
+            }
+        }
+    }
+
+    /** The all-day reminder time is shared by every client: change it here and on the server. */
+    fun setAllDayTime(minutes: Int) {
+        settings.update { it.copy(allDayMinutes = minutes) }
+        settings.allDayDirty = true
+        afterChange(sync = false)
+        if (settings.current.signedIn) scope.launch { runCatching { syncSettings() } }
     }
 
     // ---- live updates while the app is in the foreground ----------------------------------
@@ -297,6 +334,7 @@ object Repo {
         settings.update { it.copy(server = s, username = username.trim(), token = token, offline = false, syncError = "") }
         SyncWorker.schedule(app)
         UploadWorker.enqueue(app)
+        runCatching { syncSettings() }
         sync()
     }
 
