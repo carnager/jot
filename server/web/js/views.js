@@ -374,10 +374,10 @@ function buildCard(it) {
     ];
   const meta = [dueChip(it), it.labels?.map((l) => labelChip(l))].flat().filter(Boolean);
   return h('div', {
-    class: ['card', it.pinned && 'pinned', it.images?.length && 'has-images', it.images?.length && !it.title && !it.body && !liveChecks(it).length && 'only-images'],
+    class: ['card', it.color && 'filled', it.pinned && 'pinned', it.images?.length && 'has-images', it.images?.length && !it.title && !it.body && !liveChecks(it).length && 'only-images'],
     'data-id': it.id,
     'data-k': it.id,
-    'data-color': it.color || null,
+    'data-fill': it.color || null, // colored notes are filled (rows keep a strip)
     draggable: inTrash ? null : 'true',
   },
   cardImages(it),

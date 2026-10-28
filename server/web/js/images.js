@@ -190,22 +190,33 @@ export function imageURL(id, w = 0) {
  * <img> with a fixed aspect ratio, lazy loading, soft fade-in, a neutral placeholder while missing,
  * and retry with backoff on 404 (the image may still be uploading from another device).
  */
+// A 404 for an image that wasn't uploaded yet can end up in the browser cache. Once a variant
+// (with a retry suffix) has loaded, keep using that URL so re-renders don't hit the cached 404.
+const goodURL = new Map(); // `${id}|${w}` → URL that loaded
+
 export function imgEl(ref, w, { cls = '', alt = '' } = {}) {
   const img = h('img', { class: ['att-img', cls], alt, loading: 'lazy', decoding: 'async', draggable: 'false', 'data-img': ref.id });
   if (pending.has(ref.id)) img.classList.add('uploading');
   let tries = 0;
-  img.addEventListener('load', () => { img.classList.remove('missing'); img.classList.add('loaded'); });
+  const key = `${ref.id}|${w}`;
+  img.addEventListener('load', () => {
+    img.classList.remove('missing'); img.classList.add('loaded');
+    if (!img.src.startsWith('blob:')) goodURL.set(key, img.getAttribute('src'));
+  });
   img.addEventListener('error', () => {
     img.classList.add('missing');
     if (tries > 8) return;
-    const delay = Math.min(60000, 1500 * 2 ** tries++);
+    // First retry right away with a fresh URL (the 404 may just be a stale cache entry), then back off.
+    const delay = tries === 0 ? 0 : Math.min(60000, 1500 * 2 ** (tries - 1));
+    tries++;
     setTimeout(() => {
       if (!img.isConnected) return;
       const base = imageURL(ref.id, w);
       img.src = base.startsWith('blob:') ? base : base + (base.includes('?') ? '&' : '?') + 'retry=' + tries;
     }, delay);
   });
-  img.src = imageURL(ref.id, w);
+  const local = previews.get(ref.id);
+  img.src = local || goodURL.get(key) || imageURL(ref.id, w);
   if (img.complete && img.naturalWidth) img.classList.add('loaded');
   return img;
 }

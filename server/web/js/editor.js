@@ -49,7 +49,8 @@ export function openEditor(itemId, focus = null) {
   ui.openId = itemId;
   if (switching && !reduced()) {
     // Crossfade: the old content fades out on top while the new one fades in.
-    const old = h('div', { class: 'ed-xfade', 'aria-hidden': 'true' }, ...panel.childNodes);
+    const oldFill = panel.dataset.fill || null;
+    const old = h('div', { class: ['ed-xfade', oldFill && 'filled'], 'data-fill': oldFill, 'aria-hidden': 'true' }, ...panel.childNodes);
     old.querySelectorAll('[id]').forEach((n) => n.removeAttribute('id'));
     build(it);
     panel.append(old);
@@ -212,7 +213,9 @@ function build(it) {
 
 function renderChrome(it) {
   if (!panel || !it) return;
-  if (it.color) panel.dataset.color = it.color; else delete panel.dataset.color;
+  // The whole panel takes the item's color (the background transitions in CSS).
+  if (it.color) panel.dataset.fill = it.color; else delete panel.dataset.fill;
+  panel.classList.toggle('filled', !!it.color);
   // crumb
   const where = it.trashedAt ? 'Trash' : it.archived ? 'Archive' : it.done ? 'Done' : isTask(it) ? 'Task' : it.kind === 'list' ? 'Checklist' : 'Note';
   fill(crumbEl, icon(it.kind === 'list' ? 'list' : 'text', 13), where,

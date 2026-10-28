@@ -50,9 +50,10 @@
   --glow: radial-gradient(900px 260px at 50% -140px, rgba(249, 185, 40, 0.10), transparent 70%);
 
   /* Item colors: accents only (strips, dots, rings), never fills. */
-  --c-red: #e5484d; --c-orange: #ec7a2c; --c-yellow: #dca200; --c-green: #30a46c;
-  --c-teal: #12a594; --c-blue: #3e7fe0; --c-purple: #8e4ec6; --c-pink: #d6409f;
-  --c-brown: #a07653; --c-gray: #8b8d98;
+  --c-red: #e5484d; --c-orange: #f76b15; --c-yellow: #ffc53d; --c-green: #30a46c;
+  --c-teal: #12a594; --c-blue: #0090ff; --c-purple: #8e4ec6; --c-pink: #d6409f;
+  --c-brown: #ad7f58; --c-gray: #8b8d98;
+  --page-ink: #1c1a17; /* the theme's own ink, for focus rings drawn around colored cards */
 
   /* Illustration palette */
   --art-accent: var(--a-400); --art-soft: var(--a-100); --art-surface: #ffffff; --art-line: #d9d3c6;
@@ -78,9 +79,10 @@
     --sh-3: 0 28px 70px -14px rgba(0, 0, 0, 0.75), 0 6px 16px rgba(0, 0, 0, 0.4);
     --inset: inset 0 1px 0 rgba(255, 255, 255, 0.035);
     --glow: radial-gradient(1000px 320px at 50% -150px, rgba(249, 185, 40, 0.085), transparent 70%);
-    --c-red: #ff6369; --c-orange: #ff9a52; --c-yellow: #f5c445; --c-green: #4cc38a;
-    --c-teal: #2ec4b0; --c-blue: #6ea8ff; --c-purple: #b48cf0; --c-pink: #f07cc5;
-    --c-brown: #c59a74; --c-gray: #9b9ea8;
+    --c-red: #c9383d; --c-orange: #d95a10; --c-yellow: #e0a92a; --c-green: #26885a;
+    --c-teal: #0e8a7c; --c-blue: #0a77d4; --c-purple: #7642a6; --c-pink: #b53586;
+    --c-brown: #8f6948; --c-gray: #6f717b;
+    --page-ink: #f0eee9;
     --art-soft: rgba(249, 185, 40, 0.18); --art-surface: #26262b; --art-line: #44434a; --art-ink: #e8d8b0; --art-shadow: rgba(0, 0, 0, 0.35);
     color-scheme: dark;
   }
@@ -98,9 +100,10 @@
   --sh-3: 0 28px 70px -14px rgba(0, 0, 0, 0.75), 0 6px 16px rgba(0, 0, 0, 0.4);
   --inset: inset 0 1px 0 rgba(255, 255, 255, 0.035);
   --glow: radial-gradient(1000px 320px at 50% -150px, rgba(249, 185, 40, 0.085), transparent 70%);
-  --c-red: #ff6369; --c-orange: #ff9a52; --c-yellow: #f5c445; --c-green: #4cc38a;
-  --c-teal: #2ec4b0; --c-blue: #6ea8ff; --c-purple: #b48cf0; --c-pink: #f07cc5;
-  --c-brown: #c59a74; --c-gray: #9b9ea8;
+  --c-red: #c9383d; --c-orange: #d95a10; --c-yellow: #e0a92a; --c-green: #26885a;
+  --c-teal: #0e8a7c; --c-blue: #0a77d4; --c-purple: #7642a6; --c-pink: #b53586;
+  --c-brown: #8f6948; --c-gray: #6f717b;
+  --page-ink: #f0eee9;
   --art-soft: rgba(249, 185, 40, 0.18); --art-surface: #26262b; --art-line: #44434a; --art-ink: #e8d8b0; --art-shadow: rgba(0, 0, 0, 0.35);
   color-scheme: dark;
 }
@@ -120,6 +123,76 @@
 [data-tone="yellow"] { --tone: #e0a800; }
 [data-tone="green"] { --tone: #30a46c; }
 [data-tone="slate"] { --tone: #7d808c; }
+
+/* ======================= filled (colored) surfaces =======================
+   Notes with a color are filled with it. Text is dark ink when the fill's luminance is > 0.42
+   (yellow), white otherwise. Everything inside reads its colors from these local tokens, so chips,
+   muted text, checkboxes, icons and links adapt without per-component rules. */
+[data-fill="red"] { --fill: var(--c-red); }
+[data-fill="orange"] { --fill: var(--c-orange); }
+[data-fill="yellow"] { --fill: var(--c-yellow); }
+[data-fill="green"] { --fill: var(--c-green); }
+[data-fill="teal"] { --fill: var(--c-teal); }
+[data-fill="blue"] { --fill: var(--c-blue); }
+[data-fill="purple"] { --fill: var(--c-purple); }
+[data-fill="pink"] { --fill: var(--c-pink); }
+[data-fill="brown"] { --fill: var(--c-brown); }
+[data-fill="gray"] { --fill: var(--c-gray); }
+.filled {
+  /* white ink (every fill except yellow) */
+  --fg: #ffffff;
+  --fg-2: rgba(255, 255, 255, 0.92);
+  --fg-3: rgba(255, 255, 255, 0.8);
+  --fg-4: rgba(255, 255, 255, 0.58);
+  --line: rgba(255, 255, 255, 0.22);
+  --line-2: rgba(255, 255, 255, 0.34);
+  --hover: rgba(255, 255, 255, 0.18);
+  --active: rgba(255, 255, 255, 0.26);
+  --sunk: rgba(0, 0, 0, 0.14);
+  --on-fill-shadow: 0 1px 1px rgba(0, 0, 0, 0.12);
+  background-color: var(--fill) !important;
+  color: var(--fg);
+}
+.filled[data-fill="yellow"] {
+  --fg: #1b1a17;
+  --fg-2: rgba(27, 26, 23, 0.84);
+  --fg-3: rgba(27, 26, 23, 0.68);
+  --fg-4: rgba(27, 26, 23, 0.46);
+  --line: rgba(0, 0, 0, 0.14);
+  --line-2: rgba(0, 0, 0, 0.22);
+  --hover: rgba(0, 0, 0, 0.12);
+  --active: rgba(0, 0, 0, 0.18);
+  --sunk: rgba(0, 0, 0, 0.1);
+  --on-fill-shadow: none;
+}
+/* Chips: one translucent overlay style; status colors would clash with the fill. */
+.filled .mchip, .filled .chip, .filled .mchip.today, .filled .mchip.overdue, .filled .mchip.repeat,
+.filled .mchip.snooze, .filled .mchip.time, .filled .mchip.date, .filled .chip.date, .filled .chip.repeat,
+.filled .chip.label, .filled .chip.overdue, .filled .chip.today, .filled .chip.time {
+  color: var(--fg); background: var(--hover); border-color: transparent;
+}
+.filled .mchip.overdue, .filled .chip.overdue { box-shadow: inset 0 0 0 1.5px var(--fg-2); }
+.filled .mchip.label:hover, .filled button.chip:hover { background: var(--active); }
+.filled .chip.add { background: none; border: 1px dashed var(--line-2); color: var(--fg-2); }
+.filled .hash, .filled .hashtag { color: inherit; opacity: 0.85; }
+.filled a { color: inherit; text-decoration: underline; text-decoration-color: var(--fg-3); text-underline-offset: 2px; }
+.filled .card-title, .filled .ed-title { text-shadow: var(--on-fill-shadow); }
+.filled .card-body, .filled .ed-body, .filled .card-checks li, .filled .ed-check textarea { font-weight: 550; }
+/* Round checkbox: ink ring, ink fill, the check drawn in the fill color. */
+.filled .check { --ck: var(--fg-3); --ck-on: var(--fg); --ck-mark: var(--fill); }
+.filled .check.p-overdue { --ck: var(--fg); }
+.filled .check:hover .ck-fill { opacity: 0.2; }
+.filled .mini-box .bx-ring { stroke: var(--fg-3); }
+.filled .mini-box:hover .bx-ring, .filled .mini-box.on .bx-ring { stroke: var(--fg); }
+.filled .mini-box .bx-fill { fill: var(--fg); }
+.filled .mini-box .bx-mark { stroke: var(--fill); }
+.filled .icon-btn { color: var(--fg-2); }
+.filled .icon-btn:hover { color: var(--fg); background: var(--hover); }
+.filled .card-pin.on, .filled .icon-btn.on { color: var(--fg); }
+.filled .icon-btn.on { background: var(--hover); }
+.filled .att-tile, .filled .ed-img-open, .filled .ed-img { background: var(--sunk); }
+.filled .att-tile::before, .filled .ed-img-open::before { background: var(--fg-4); }
+.filled .card-images { background: var(--line); }
 
 /* ======================= base ======================= */
 * { box-sizing: border-box; }
@@ -654,7 +727,7 @@ button.chip:hover .x { opacity: 0.7; }
 .row.open { border-color: var(--line-2); background: color-mix(in srgb, var(--surface) 92%, var(--fg) 3%); }
 .row.cursor { border-color: transparent; box-shadow: 0 0 0 1.5px var(--ring), var(--sh-2); }
 .row.selected { border-color: transparent; background: color-mix(in srgb, var(--surface) 88%, var(--accent) 12%); box-shadow: 0 0 0 1.5px var(--ring), var(--sh-1); }
-.row[data-color]::after, .card[data-color]::after {
+.row[data-color]::after {
   content: ""; position: absolute; left: -1px; width: 3px; border-radius: 0 3px 3px 0;
   background: var(--item-c); pointer-events: none;
 }
@@ -724,7 +797,12 @@ button.chip:hover .x { opacity: 0.7; }
 .card.open { box-shadow: 0 0 0 1.5px var(--fg-3), var(--sh-2); border-color: transparent; }
 .card.dragging { opacity: 0.4; }
 .card.drop-before::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 3px; background: var(--ring); border-radius: 2px; z-index: 2; }
-.card[data-color]::after { top: 14px; bottom: 14px; }
+.card.filled { border-color: transparent; box-shadow: var(--sh-1); }
+.card.filled:hover { box-shadow: var(--sh-2); }
+.card.filled.cursor, .card.filled.selected { box-shadow: 0 0 0 2px var(--bg-main), 0 0 0 4px var(--page-ink), var(--sh-2); }
+.card.filled.selected { background-image: linear-gradient(rgba(255, 255, 255, 0.12), rgba(255, 255, 255, 0.12)); }
+.card.filled.open { box-shadow: 0 0 0 2px var(--bg-main), 0 0 0 3.5px var(--page-ink), var(--sh-2); }
+.card.filled.file-over { box-shadow: 0 0 0 2px var(--bg-main), 0 0 0 4px var(--accent-strong), var(--sh-2); }
 .card-title { font-weight: 750; font-size: 15.5px; line-height: 1.35; margin: 0 0 6px; letter-spacing: -0.02em; padding-right: 22px; }
 .card-title.done { text-decoration: line-through; text-decoration-color: var(--fg-4); color: var(--fg-3); }
 .card-body {
@@ -926,7 +1004,17 @@ button.chip:hover .x { opacity: 0.7; }
   min-width: 0;
   position: relative;
 }
-.editor[data-color]::before { content: ""; position: absolute; left: -1px; top: 0; bottom: 0; width: 3px; background: var(--item-c); z-index: 3; }
+.editor { transition: background-color 0.3s cubic-bezier(0.2, 0.8, 0.2, 1), color 0.3s; }
+.editor.filled { border-left-color: transparent; }
+.editor.filled .ed-foot { background: var(--sunk); border-color: transparent; }
+.editor.filled .ed-foot .icon-btn:hover { background: var(--hover); box-shadow: none; }
+.editor.filled .ed-meta { border-bottom-color: var(--line); }
+.editor.filled .ed-banner { background: var(--sunk); border-color: transparent; color: var(--fg-2); }
+.editor.filled .ed-banner .btn { background: var(--hover); border-color: transparent; color: var(--fg); box-shadow: none; }
+.editor.filled .color-dot { background: var(--fg); box-shadow: 0 0 0 3px var(--hover); }
+.editor.filled .ed-addcheck:hover { color: var(--fg); }
+.editor.filled .ed-img-del:hover { background: rgba(0, 0, 0, 0.6); }
+.ed-xfade.filled { background-color: var(--fill); }
 .ed-top { display: flex; align-items: center; gap: 2px; padding: 12px 12px 4px 30px; flex: none; }
 .ed-top .crumb {
   flex: 1; display: flex; align-items: center; gap: 7px; min-width: 0;
