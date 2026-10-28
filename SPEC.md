@@ -36,6 +36,8 @@ no "note vs task" decision at capture time.
                                 //   floating local wall-clock time (no timezone, follows the device)
   "remind": true,               // fire a notification when due (timed: at due time; all-day: at the
                                 //   user's "all-day reminder time" setting, default 09:00)
+  "alerts": [0, 30],            // optional, minutes before the fire time; a missing or empty field means [0].
+                                //   Each one fires a notification (e.g. 1 day before AND on time). Group: schedule
   "snoozedUntil": "",           // "" | "2026-10-29T10:30": the next notification fires here instead of
                                 //   at due. Cleared when due changes or the item is completed.
   "repeat": null,               // null | Repeat (see §4)
@@ -254,19 +256,47 @@ Test vectors: `spec/repeat.json`.
 
 ## 5. Reminders & notifications
 
+**Fire times** of an item (shared by every client and the server). Nothing fires if `remind` is false, or the item is
+done, archived, trashed or deleted, or has no due date.
+- If `snoozedUntil` is set, there's exactly one fire time, `snoozedUntil`.
+- Otherwise, base = due (timed) or due date at `allDayTime` (all-day). Fire times = base − m minutes for each m in
+  `alerts` (default `[0]`). All of them are interpreted in the user's `timezone` (server) or the device zone (Android/web).
+- The alert presets clients offer: on time, 5 min, 15 min, 30 min, 1 h, 2 h, 1 day, 2 days, 1 week before. Clients
+  show the alerts in the date sheet/popover ("On time · 30 min before"). For all-day items the sensible presets
+  are on the day, 1 day, 2 days and 1 week before.
+
 - **Android** schedules exact alarms locally (`AlarmManager.setExactAndAllowWhileIdle`, permission
-  `USE_EXACT_ALARM`) for every item that has `remind`, is not done/archived/trashed and has a due date.
-  The fire time is `snoozedUntil` or due (timed) or due date at the all-day time. Alarms are rescheduled after every
+  `USE_EXACT_ALARM`) for every fire time. Alarms are rescheduled after every
   local change or sync, on boot, on time-zone or time change, and on app update. When a fire time is in the
   past and was never shown, the notification appears right away, at most once per item and fire time.
-  The notification has the title and a body preview, and its actions are **Done**, **Snooze 1 h** and **Tomorrow**
-  (snooze presets can be set in Settings). Tapping it opens the item.
+  The notification has the title and a body preview (an early alert says "in 30 min" / "tomorrow 09:00"), and its
+  actions are **Done**, **Snooze 1 h** and **Tomorrow** (snooze presets can be set in Settings). Tapping it opens the item.
   One channel is "Reminders" (high importance) with grouping.
 - **Web** shows `Notification`s while a tab is open (it asks permission once from Settings) and keeps a
   red overdue badge in the tab title / favicon.
-- The server never sends notifications (there's no push dependency).
+- **Server push via ntfy (optional, per user, off by default):** when the user has set an ntfy topic URL, the server
+  sends every fire time to it. This is meant for desktops and other devices without the app. Subscribing to the topic
+  on the same phone as the app would notify twice, so Settings says so. The message has:
+  title = item title, body = time ("Today 14:00", "in 30 min") plus a body preview, `Tags: alarm_clock`, `Priority: high`,
+  a click URL that opens the item in the web app (`<publicUrl>/#/item/<id>`), and two http actions: **Done** and
+  **Snooze 1 h** (`POST <publicUrl>/api/remind/<actionToken>/<itemId>/done|snooze`). These actions complete the item
+  (repeat-aware, §4) or snooze it on the server, and the change syncs to every device.
+  The server checks every 30 s and sends each (item, fire time) at most once. A fire time more than 12 h old is skipped.
 
----
+### Settings (§2c)
+`GET /api/settings` → `PUT /api/settings` (the same object; unknown keys are kept, for client-specific settings):
+```json
+{ "timezone": "Europe/Berlin", "allDayTime": "09:00",
+  "ntfy": { "url": "https://push.mooned.de/jot-rasi-x7f3", "token": "" } }
+```
+- `timezone`: an IANA name. Defaults to the server's zone. Clients offer "use this device's zone" (the browser's
+  `Intl.DateTimeFormat().resolvedOptions().timeZone`).
+- `allDayTime`: shared by every client (Android and web read it from here and fall back to their local value when offline).
+- `ntfy.url`: the topic URL, "" = off. `ntfy.token` is an optional access token for protected topics (sent as Bearer).
+- The server records `publicUrl` from the request's origin on every PUT, which it needs for the links. It also creates
+  `actionToken` (random, read-only for clients) on first use. `POST /api/settings/ntfy-test` sends a test message.
+- The web Settings dialog has a "Reminders" section: all-day time, timezone, the ntfy topic and token, and a "Send test"
+  button. Android shows the all-day time (synced) and a short note pointing to the web for ntfy.
 
 ## 6. UX requirements (both clients)
 

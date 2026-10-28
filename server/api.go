@@ -35,6 +35,10 @@ func (s *Server) routes(web http.Handler) http.Handler {
 	mux.HandleFunc("GET /api/export", s.auth(s.handleExport))
 	mux.HandleFunc("PUT /api/attachments/{id}", s.auth(s.handlePutAttachment))
 	mux.HandleFunc("GET /api/attachments/{id}", s.auth(s.handleGetAttachment))
+	mux.HandleFunc("GET /api/settings", s.auth(s.handleGetSettings))
+	mux.HandleFunc("PUT /api/settings", s.auth(s.handlePutSettings))
+	mux.HandleFunc("POST /api/settings/ntfy-test", s.auth(s.handleNtfyTest))
+	mux.HandleFunc("POST /api/remind/{token}/{item}/{op}", s.handleRemindAction)
 	mux.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusNotFound, "no such endpoint")
 	})

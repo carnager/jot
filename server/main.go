@@ -111,6 +111,7 @@ func serve(store *Store, addr, webDir string) error {
 	}
 	s := &Server{store: store, hub: NewHub()}
 	go s.collectAttachmentsLoop()
+	go s.reminderLoop()
 	srv := &http.Server{
 		Addr:              addr,
 		Handler:           s.routes(web),
