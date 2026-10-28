@@ -19,10 +19,11 @@ android-release:
 run: server
 	./bin/jot serve --data ./data --web-dir server/web
 
-# proteus: Caddy proxies jot.mooned.de → 127.0.0.1:5566 (user service, data in ~/.local/share/jot)
-deploy: server
-	scp -q bin/jot proteus:.local/bin/jot.new
-	ssh proteus 'mv ~/.local/bin/jot.new ~/.local/bin/jot && systemctl --user restart jot && systemctl --user is-active jot'
+# proteus runs the Arch package (repo.mooned.de) as a user service on 127.0.0.1:5566 behind Caddy
+# (jot.mooned.de). Commit first: the package builds the committed state.
+deploy:
+	~/Code/archrepo/publish jot
+	ssh -t proteus 'sudo pacman -Sy --needed jot && systemctl --user restart jot && systemctl --user is-active jot'
 
 # Nightly restic backup of ~/.local/share/jot to sftp:scorpia:Backup/Jot/restic (03:15).
 # Creates the restic password on proteus once; keep a copy of it somewhere safe.
