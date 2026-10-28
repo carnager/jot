@@ -155,6 +155,9 @@ The server merges per field group, so clients only have to record *when* they ch
 - **Checks** also carry `"u"` (the ms epoch of their last change: text, done or indent). A removed check is kept as a
   tombstone `{"id":"..","deleted":true,"u":..}`. Clients hide tombstones and drop those older than 30 days.
   Completing a repeating item resets every check, so each one gets a fresh `u`.
+- A tracking client always stamps `updatedAt` with the same value as the `fm` entries / check `u`s it set, so
+  `updatedAt == max(fm ∪ checks[*].u)`. A side whose `updatedAt` is newer than every such stamp was edited by a client that doesn't
+  track fields (it kept a stale `fm`). That side is treated as untracked, i.e. last-write-wins for that change.
 - Merge on the server, when an incoming change meets a stored item:
   - For each group, the side with the larger `fm[group]` wins. A missing entry counts as that side's `updatedAt`, so old
     clients degrade to whole-item last-write-wins. A tie goes to the incoming side.

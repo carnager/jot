@@ -46,6 +46,25 @@ func newMergeSide(obj map[string]json.RawMessage, incoming bool) mergeSide {
 	if raw, ok := obj["fm"]; ok {
 		json.Unmarshal(raw, &s.fm)
 	}
+	// Tracking clients stamp fm (or a check's u) and updatedAt together, so updatedAt
+	// never exceeds every stamp. If it does, a client that doesn't know fm edited the item
+	// (keeping a stale fm), and trusting fm would throw that edit away.
+	if s.fm != nil {
+		var latest int64
+		for _, t := range s.fm {
+			latest = max(latest, t)
+		}
+		var checks []struct {
+			U int64 `json:"u"`
+		}
+		json.Unmarshal(obj["checks"], &checks)
+		for _, c := range checks {
+			latest = max(latest, c.U) // ticking a check stamps only its u
+		}
+		if s.updatedAt > latest {
+			s.fm = nil
+		}
+	}
 	return s
 }
 

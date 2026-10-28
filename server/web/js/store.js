@@ -94,7 +94,9 @@ class Store {
     const prev = this.items.get(item.id);
     const now = Date.now();
     // §2b: record which field groups changed (fm), stamp checks (u) and keep check tombstones.
-    const next = { ...stamp(this.drafts.has(item.id) ? null : prev, item, now), updatedAt: Math.max(now, (prev?.updatedAt || 0) + 1) };
+    // One timestamp for updatedAt and every stamp, so the server sees updatedAt == max(fm, checks.u) (SPEC §2b).
+    const ts = Math.max(now, (prev?.updatedAt || 0) + 1);
+    const next = { ...stamp(this.drafts.has(item.id) ? null : prev, item, ts), updatedAt: ts };
     if (this.drafts.has(item.id)) {
       if (isEmpty(next) && !next.deleted) {
         // Still nothing typed: keep it in memory only.

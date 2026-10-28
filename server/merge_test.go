@@ -123,3 +123,33 @@ func TestSyncMergesAndConverges(t *testing.T) {
 		t.Fatalf("expected no-op returning stored copy, changed=%v items=%d", changed, len(items))
 	}
 }
+
+func TestMergeLegacyEditKeepingStaleFm(t *testing.T) {
+	// The web stamped the title at 100; an older Android build later renamed the
+	// note at 500 but sent the stale fm back unchanged.
+	stored := obj(t, `{"id":"a","title":"web","color":"red","updatedAt":100,"fm":{"title":100,"color":100}}`)
+	in := obj(t, `{"id":"a","title":"phone","color":"red","updatedAt":500,"fm":{"title":100,"color":100}}`)
+	m := mergeItems(stored, in)
+	if got := field[string](t, m, "title"); got != "phone" {
+		t.Fatalf("legacy edit lost: title = %q", got)
+	}
+	// A later tracked edit of another group still merges against it correctly.
+	next := obj(t, `{"id":"a","title":"web","color":"blue","updatedAt":600,"fm":{"title":100,"color":600}}`)
+	m2 := mergeItems(m, next)
+	if field[string](t, m2, "title") != "phone" || field[string](t, m2, "color") != "blue" {
+		t.Fatalf("after tracked edit: %s", mustJSON(m2))
+	}
+}
+
+func TestMergeCheckTickCountsAsTracked(t *testing.T) {
+	// Web ticked "milk" at 300 (only its u changes); the phone (tracked) renamed the list at 250.
+	stored := obj(t, `{"id":"l","title":"Shopping","updatedAt":250,"fm":{"title":250,"order":100},"checks":[{"id":"milk","text":"Milk","done":false,"u":100}]}`)
+	in := obj(t, `{"id":"l","title":"Groceries old","updatedAt":300,"fm":{"title":50,"order":100},"checks":[{"id":"milk","text":"Milk","done":true,"u":300}]}`)
+	m := mergeItems(stored, in)
+	if field[string](t, m, "title") != "Shopping" {
+		t.Fatalf("title should stay: %s", mustJSON(m))
+	}
+	if c := field[[]testCheck](t, m, "checks"); len(c) != 1 || !c[0].Done {
+		t.Fatalf("tick lost: %s", mustJSON(m))
+	}
+}
