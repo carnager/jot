@@ -1,0 +1,18 @@
+post_install() {
+  cat <<'MSG'
+==> Jot: create an account, then start the server.
+    System service (data in /var/lib/jot, listens on 127.0.0.1:8080):
+      sudo systemctl start jot   # creates /var/lib/jot
+      sudo -u jot JOT_DATA=/var/lib/jot jot user add <name>
+      sudo systemctl enable --now jot
+    Or as your user (data in ~/.local/share/jot, 127.0.0.1:5566):
+      jot user add <name> --data ~/.local/share/jot
+      systemctl --user enable --now jot
+    Address: JOT_ADDR in /etc/jot.env (system) or ~/.config/jot.env (user).
+MSG
+}
+
+post_upgrade() {
+  systemctl try-restart jot.service >/dev/null 2>&1 || true
+  echo "==> Restart user instances yourself: systemctl --user restart jot"
+}

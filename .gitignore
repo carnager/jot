@@ -5,3 +5,7 @@ server/data/
 *.db-shm
 *.db-wal
 /server/jot
+packaging/arch/src/
+packaging/arch/pkg/
+packaging/arch/jot/
+packaging/arch/*.pkg.tar.zst*

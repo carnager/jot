@@ -1,0 +1,17 @@
+[Unit]
+Description=Jot notes & todos server
+Documentation=file:///usr/share/doc/jot/README.md
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Environment=JOT_ADDR=127.0.0.1:5566
+Environment=JOT_DATA=%h/.local/share/jot
+EnvironmentFile=-%E/jot.env
+ExecStart=/usr/bin/jot serve
+WorkingDirectory=%h
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=default.target

@@ -1,0 +1,46 @@
+[Unit]
+Description=Jot notes & todos server
+Documentation=file:///usr/share/doc/jot/README.md
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Environment=JOT_ADDR=127.0.0.1:8080
+Environment=JOT_DATA=/var/lib/jot
+EnvironmentFile=-/etc/jot.env
+ExecStart=/usr/bin/jot serve
+User=jot
+Group=jot
+StateDirectory=jot
+StateDirectoryMode=0700
+WorkingDirectory=/var/lib/jot
+Restart=on-failure
+RestartSec=5
+
+CapabilityBoundingSet=
+LockPersonality=true
+MemoryDenyWriteExecute=true
+NoNewPrivileges=true
+PrivateDevices=true
+PrivateTmp=true
+PrivateUsers=true
+ProtectClock=true
+ProtectControlGroups=true
+ProtectHome=true
+ProtectHostname=true
+ProtectKernelLogs=true
+ProtectKernelModules=true
+ProtectKernelTunables=true
+ProtectProc=invisible
+ProtectSystem=strict
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictNamespaces=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallFilter=~@privileged
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target
