@@ -461,15 +461,16 @@ type artRef struct {
 	mime string
 }
 
-// loadRef reads a character's reference image, at most 960 px wide (plenty, and cheaper to send).
+// loadRef reads a character's reference image, at most 1600 px wide: references are often mostly
+// background, and at 960 px the character itself got too small to keep its detail.
 func (a *Artist) loadRef(userID int64, id string) (artRef, error) {
 	att, err := a.store.Attachment(userID, id)
 	if err != nil {
 		return artRef{}, err
 	}
 	path, mime := filepath.Join(a.store.attachmentDir(userID), att.ID), att.MIME
-	if att.MIME == "image/gif" || att.W > 960 {
-		if path, err = a.store.thumbnail(userID, att, 960); err != nil {
+	if att.MIME == "image/gif" || att.W > 1600 {
+		if path, err = a.store.thumbnail(userID, att, 1600); err != nil {
 			return artRef{}, err
 		}
 		mime = "image/jpeg"
@@ -539,13 +540,18 @@ func artPrompt(style string, it artItem, cast []artCharacter, scene string) stri
 		style = defaultArtStyle
 	}
 	var b strings.Builder
+	if len(cast) > 0 {
+		// The references lead: they're the look to match. The style only sets the scene's mood.
+		b.WriteString("The reference images show recurring characters from one animated film. Draw them so they are " +
+			"unmistakably the same characters: the same rendering (3D or 2D, textures such as fur and fabric, shading, lighting " +
+			"and level of detail), the same proportions, faces, eyes, colors, patterns and clothing. Copy their look, don't " +
+			"reinterpret or simplify it. Put them in a new scene and don't copy the reference backgrounds.\n")
+	}
 	b.WriteString(style)
 	b.WriteString(" It decorates a card in a personal notes app and should show at a glance what the note is about. " +
 		"The note may be in German or English. Depict the scene, activity or objects it is about. " +
 		"Do not put any text, letters, numbers or words in the image. No borders, frames or user interface.\n\n")
 	if len(cast) > 0 {
-		b.WriteString("The reference images show recurring characters. Keep each one's look exactly (shape, colors, markings, " +
-			"clothing) and draw them in the style described above, in a new scene; don't copy the reference backgrounds.\n")
 		for i, c := range cast {
 			fmt.Fprintf(&b, "Image %d: %s", i+1, c.Name)
 			if about := strings.TrimSpace(c.About); about != "" {
