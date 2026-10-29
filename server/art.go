@@ -428,9 +428,13 @@ func (a *Artist) attach(j artJob, att Attachment) (bool, error) {
 func (a *Artist) draw(ctx context.Context, userID int64, set artSettings, it artItem) ([]byte, error) {
 	var cast []artCharacter
 	var refs []artRef
-	for _, c := range set.Characters {
-		if len(cast) == maxArtCharacters || strings.TrimSpace(c.Name) == "" {
-			continue
+	for i, c := range set.Characters {
+		if len(cast) == maxArtCharacters {
+			break
+		}
+		// A character whose name didn't get saved still counts; the models need something to call it.
+		if c.Name = strings.TrimSpace(c.Name); c.Name == "" {
+			c.Name = fmt.Sprintf("Character %d", i+1)
 		}
 		if ref, err := a.loadRef(userID, c.Image); err == nil {
 			cast, refs = append(cast, c), append(refs, ref)
@@ -485,7 +489,7 @@ func (a *Artist) choose(ctx context.Context, cast []artCharacter, it artItem) ([
 	sys.WriteString("You plan small illustrations for notes and tasks in a personal notes app. " +
 		"Every picture shows one or more of these recurring characters:\n")
 	for _, c := range cast {
-		fmt.Fprintf(&sys, "- %s: %s\n", c.Name, clip(strings.TrimSpace(c.About), 300))
+		fmt.Fprintf(&sys, "- %s: %s\n", c.Name, clip(strings.TrimSpace(c.About), 600))
 	}
 	sys.WriteString("\nFor the note you get, choose the characters that fit it best: usually one, several or all of them only " +
 		"when the note is about something done together or the characters' descriptions call for it. Then describe, in English, " +
@@ -555,7 +559,7 @@ func artPrompt(style string, it artItem, cast []artCharacter, scene string) stri
 		for i, c := range cast {
 			fmt.Fprintf(&b, "Image %d: %s", i+1, c.Name)
 			if about := strings.TrimSpace(c.About); about != "" {
-				fmt.Fprintf(&b, " (%s)", clip(about, 300))
+				fmt.Fprintf(&b, " (%s)", clip(about, 600))
 			}
 			b.WriteString("\n")
 		}

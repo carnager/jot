@@ -854,15 +854,20 @@ function illustrationsSection() {
       save({ auto: v }, v ? 'New notes get a picture' : 'Automatic pictures off');
     },
   }, label)));
+  let styleTimer = 0;
   const style = h('textarea', {
     class: 'field wide art-style', value: art.style || '', spellcheck: 'false',
     placeholder: 'A cheerful flat vector illustration with clean shapes, bright saturated colors and soft light',
-    onchange: (e) => save({ style: e.target.value.trim() }, 'Style saved'),
+    oninput: (e) => { clearTimeout(styleTimer); styleTimer = setTimeout(() => save({ style: e.target.value.trim() }, 'Style saved'), 600); },
+    onchange: (e) => { clearTimeout(styleTimer); save({ style: e.target.value.trim() }, 'Style saved'); },
   });
   // Characters (§2d): recurring figures, each with a reference picture. The server picks the ones that fit a note.
   const chars = (art.characters || []).map((c) => ({ ...c }));
   const list = h('div', { class: 'char-list' });
-  const saveChars = (okText = 'Characters saved') => save({ characters: chars.filter((c) => c.image) }, okText);
+  const saveChars = (okText = 'Characters saved') => { clearTimeout(typing); return save({ characters: chars.filter((c) => c.image) }, okText); };
+  // Save while typing: closing the dialog doesn't fire "change", which once lost every name.
+  let typing = 0;
+  const typed = (c, key) => (e) => { c[key] = e.target.value.trim(); clearTimeout(typing); typing = setTimeout(() => saveChars(), 500); };
   const pick = (onFile) => {
     const input = h('input', { type: 'file', accept: 'image/*', style: { display: 'none' } });
     input.onchange = () => { const f = imageFiles(input.files)[0]; input.remove(); if (f) onFile(f); };
@@ -882,11 +887,11 @@ function illustrationsSection() {
       h('div', { class: 'char-fields' },
         h('input', {
           class: 'field', value: c.name || '', placeholder: 'Name, e.g. Bear', maxlength: '40',
-          onchange: (e) => { c.name = e.target.value.trim(); saveChars(); },
+          oninput: typed(c, 'name'), onchange: () => saveChars(),
         }),
         h('input', {
           class: 'field wide', value: c.about || '', placeholder: 'Who they are and when they show up, e.g. calm, cosy: family, home, food',
-          maxlength: '300', onchange: (e) => { c.about = e.target.value.trim(); saveChars(); },
+          maxlength: '600', oninput: typed(c, 'about'), onchange: () => saveChars(),
         })),
       h('button', {
         class: 'icon-btn sm', title: 'Remove character',
