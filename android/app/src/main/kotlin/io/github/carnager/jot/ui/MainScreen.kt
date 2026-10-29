@@ -143,6 +143,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
@@ -158,6 +159,7 @@ import java.time.format.DateTimeFormatter
 import java.util.Locale
 
 private val MAIN_VIEWS = listOf(Views.TODAY, Views.UPCOMING, Views.NOTES)
+private const val OTHER_PAGE = "other"
 
 private data class ContentKey(val view: String, val label: String?, val search: Boolean, val empty: Boolean)
 
@@ -359,29 +361,80 @@ fun MainScreen(actions: AppActions, onEdit: (String, Boolean) -> Unit, onSetting
                             )
                         }
                     }
-                    // Today, Upcoming and Notes stay composed once visited, so switching tabs is a crossfade
-                    // of pages that already exist (no grid re-measure, no image reloads). Other views animate in.
-                    val mainKey = if (query == null && view in MAIN_VIEWS) view else null
+                    // Today, Upcoming and Notes stay composed once visited, so switching tabs reuses pages that
+                    // already exist (no grid re-measure, no image reloads). Other views share one more page.
+                    //
+                    // Fade-through, never a crossfade: the outgoing page stays fully opaque underneath while the
+                    // incoming one fades in on top as one composited layer (opaque background included). A
+                    // symmetric crossfade showed both dense pages half-transparent at once, which read as flicker.
+                    val pageId = if (query == null && view in MAIN_VIEWS) view else OTHER_PAGE
+                    val otherKey = ContentKey(view, label, query != null, empty)
+                    var lastOther by remember { mutableStateOf(otherKey) }
+                    if (pageId == OTHER_PAGE) lastOther = otherKey
                     var visited by remember { mutableStateOf(setOf<String>()) }
-                    if (mainKey != null && mainKey !in visited) visited = visited + mainKey
-                    Box(Modifier.fillMaxSize()) {
-                        MAIN_VIEWS.forEach { v ->
+                    if (pageId !in visited) visited = visited + pageId
+                    var under by remember { mutableStateOf<String?>(null) }
+                    var shown by remember { mutableStateOf(pageId) }
+                    var enter by remember { androidx.compose.runtime.mutableFloatStateOf(1f) }
+                    // Reset in the same frame as the switch: the incoming page must never draw at full alpha first.
+                    if (pageId != shown) { under = shown; shown = pageId; enter = 0f }
+                    LaunchedEffect(pageId) {
+                        if (under == null) return@LaunchedEffect
+                        androidx.compose.animation.core.animate(0f, 1f, animationSpec = androidx.compose.animation.core.tween(Motion.MEDIUM, easing = androidx.compose.animation.core.LinearOutSlowInEasing)) { v, _ -> enter = v }
+                        under = null
+                    }
+                    var pageTop by remember { mutableStateOf(0f) }
+                    val glow = scheme.primary.copy(alpha = if (dark) 0.11f else 0.10f)
+                    val pageBg = scheme.surface
+                    val lift = with(density) { 10.dp.toPx() }
+                    Box(Modifier.fillMaxSize().onGloballyPositioned { pageTop = it.positionInRoot().y }) {
+                        (MAIN_VIEWS + OTHER_PAGE).forEach { v ->
                             if (v in visited) key(v) {
-                                val active = v == mainKey
-                                val a by animateFloatAsState(if (active) 1f else 0f, Motion.medium(), label = "page")
+                                val active = v == pageId
+                                val drawn = active || v == under
                                 Box(
                                     Modifier.fillMaxSize().zIndex(if (active) 1f else 0f)
-                                        // ModulateAlpha: no offscreen buffer for the fading page.
-                                        .graphicsLayer { alpha = a; compositingStrategy = androidx.compose.ui.graphics.CompositingStrategy.ModulateAlpha }
-                                        // Faded-out pages stay composed but aren't drawn at all.
-                                        .drawWithContent { if (a > 0f) drawContent() }
+                                        .graphicsLayer {
+                                            alpha = if (active) enter else 1f
+                                            translationY = if (active) (1f - enter) * lift else 0f
+                                            // One offscreen layer for the incoming page, so it fades as a whole.
+                                            compositingStrategy = androidx.compose.ui.graphics.CompositingStrategy.Offscreen
+                                        }
+                                        // Pages that are neither shown nor fading out aren't drawn at all.
+                                        .drawWithContent { if (drawn) drawContent() }
+                                        // Opaque, with this page's slice of the screen-wide warm glow (no seam).
+                                        .drawBehind {
+                                            drawRect(pageBg)
+                                            drawRect(
+                                                Brush.radialGradient(
+                                                    listOf(glow, Color.Transparent),
+                                                    center = Offset(size.width * 0.9f, -size.width * 0.15f - pageTop),
+                                                    radius = size.width * 1.1f,
+                                                ),
+                                            )
+                                        }
                                         .then(if (active) Modifier else Modifier.clearAndSetSemantics { }),
                                 ) {
                                     // Only the active page joins the card↔editor transition: the same item on two
                                     // pages would be two matches for one shared key, which never settles.
                                     val shared = LocalSharedScope.current
                                     androidx.compose.runtime.CompositionLocalProvider(LocalSharedScope provides if (active) shared else null) {
-                                        renderPage(ContentKey(v, null, false, false))
+                                        if (v == OTHER_PAGE) {
+                                            // Label → label, Done, Archive, Trash, search: fade the new content in over the old.
+                                            AnimatedContent(
+                                                targetState = lastOther,
+                                                transitionSpec = {
+                                                    (fadeIn(Motion.medium()) togetherWith fadeOut(androidx.compose.animation.core.tween(0, delayMillis = Motion.MEDIUM)))
+                                                        .apply { targetContentZIndex = 1f }
+                                                },
+                                                label = "content",
+                                            ) { k ->
+                                                Box(Modifier.fillMaxSize().drawBehind {
+                                                    drawRect(pageBg)
+                                                    drawRect(Brush.radialGradient(listOf(glow, Color.Transparent), center = Offset(size.width * 0.9f, -size.width * 0.15f - pageTop), radius = size.width * 1.1f))
+                                                }) { renderPage(k) }
+                                            }
+                                        } else renderPage(ContentKey(v, null, false, false))
                                     }
                                     if (!active) Box(Modifier.matchParentSize().pointerInput(Unit) {
                                         awaitPointerEventScope { while (true) awaitPointerEvent(PointerEventPass.Initial).changes.forEach { it.consume() } }
@@ -389,12 +442,6 @@ fun MainScreen(actions: AppActions, onEdit: (String, Boolean) -> Unit, onSetting
                                 }
                             }
                         }
-                        if (mainKey == null) AnimatedContent(
-                            targetState = ContentKey(view, label, query != null, empty),
-                            transitionSpec = { fadeIn(Motion.medium()) togetherWith fadeOut(Motion.fast()) },
-                            modifier = Modifier.zIndex(2f),
-                            label = "content",
-                        ) { key -> renderPage(key) }
                     }
                 }
             }
