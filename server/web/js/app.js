@@ -835,6 +835,43 @@ function remindersSection() {
       h('div', { class: 'ntfy-ctl' }, url, token, h('div', { class: 'ntfy-actions' }, test, msg))));
 }
 
+/** Settings → Illustrations (§2d): only when the server has an OpenAI key. */
+function illustrationsSection() {
+  const set = serverSettings();
+  if (!set.artAvailable) return null;
+  const art = set.art || {};
+  const msg = h('div', { class: 'set-msg', 'aria-live': 'polite' });
+  const save = async (patch, okText) => {
+    msg.className = 'set-msg'; msg.textContent = 'Saving…';
+    const r = await saveServerSettings({ art: patch });
+    msg.className = 'set-msg ' + (r.ok ? 'ok' : 'err'); msg.textContent = r.ok ? okText : r.error;
+  };
+  const seg = h('div', { class: 'seg' }, [[false, 'Off'], [true, 'On']].map(([v, label]) => h('button', {
+    class: [!!art.auto === v && 'on'],
+    onclick: (e) => {
+      seg.querySelectorAll('button').forEach((b) => b.classList.remove('on'));
+      e.currentTarget.classList.add('on');
+      save({ auto: v }, v ? 'New notes get a picture' : 'Automatic pictures off');
+    },
+  }, label)));
+  const style = h('textarea', {
+    class: 'field wide art-style', value: art.style || '', spellcheck: 'false',
+    placeholder: 'A cheerful flat vector illustration with clean shapes, bright saturated colors and soft light',
+    onchange: (e) => save({ style: e.target.value.trim() }, 'Style saved'),
+  });
+  return h('div', { class: 'settings-group' },
+    h('div', { class: 'settings-h' }, 'Illustrations'),
+    h('div', { class: 'settings-row' },
+      h('div', null, h('div', { class: 't' }, 'Paint pictures for new notes'),
+        h('div', { class: 'd' }, 'A few seconds after you add a note without an image, the server paints one. Remove it and it stays gone.'),
+        h('div', { class: 'd warn' }, icon('sparkles', 12), 'The note’s text is sent to OpenAI to make the picture.')),
+      seg),
+    h('div', { class: 'settings-row col' },
+      h('div', null, h('div', { class: 't' }, 'Style'),
+        h('div', { class: 'd' }, 'How every picture should look, so the cards match. Leave empty for the default. Repaint a single note from its editor (✦).')),
+      h('div', { class: 'ntfy-ctl' }, style, msg)));
+}
+
 function settings() {
   const s = ui.settings;
   const seg = (key, opts) => h('div', { class: 'seg' }, opts.map(([v, label]) => h('button', {
@@ -887,6 +924,7 @@ function settings() {
         h('div', { class: 'd' }, perm === 'unsupported' ? 'Not supported by this browser.' : 'Reminders pop up while a Jot tab is open. Your phone handles them otherwise.')),
       perm === 'unsupported' ? null : notifBtn),
     rem,
+    illustrationsSection(),
     h('div', { class: 'settings-row' },
       h('div', null, h('div', { class: 't' }, 'Sync'), h('div', { class: 'd' }, `Last synced ${last}${store.dirty.size ? ` · ${store.dirty.size} pending` : ''}`)),
       h('button', { class: 'btn sm', onclick: () => store.sync().then(settings) }, icon('refresh', 14), 'Sync now')),

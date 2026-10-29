@@ -32,7 +32,8 @@ Usage:
 Global flags (all commands, any position):
   --data DIR   data directory (default $JOT_DATA or ./data)
 
-Environment: JOT_ADDR, JOT_DATA, JOT_PASSWORD (non-interactive user add/passwd)
+Environment: JOT_ADDR, JOT_DATA, JOT_PASSWORD (non-interactive user add/passwd),
+  JOT_OPENAI_KEY (turns on illustrations), JOT_ART_MODEL, JOT_ART_QUALITY, JOT_ART_DAILY_LIMIT
 `
 
 func env(key, def string) string {
@@ -119,14 +120,19 @@ func serve(store *Store, addr, webDir string) error {
 	s := &Server{store: store, hub: NewHub()}
 	go s.collectAttachmentsLoop()
 	go s.reminderLoop()
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	if cfg, ok := artConfigFromEnv(); ok {
+		s.art = NewArtist(store, s.hub, cfg)
+		go s.art.Run(ctx)
+		log.Printf("illustrations on (%s, %s quality, %d per user per day)", cfg.model, cfg.quality, cfg.dailyLimit)
+	}
 	srv := &http.Server{
 		Addr:              addr,
 		Handler:           s.routes(web),
 		ReadHeaderTimeout: 10 * time.Second,
 		IdleTimeout:       120 * time.Second,
 	}
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
 	go func() {
 		<-ctx.Done()
 		shutdown, cancel := context.WithTimeout(context.Background(), 5*time.Second)

@@ -143,6 +143,7 @@ func (s *Server) handleGetSettings(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, "could not load settings")
 		return
 	}
+	set["artAvailable"] = mustJSON(s.art != nil)
 	writeJSON(w, http.StatusOK, set)
 }
 
@@ -171,7 +172,8 @@ func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	// Server-owned keys can't be set by clients.
-	for _, k := range []string{"actionToken", "publicUrl", "ntfyEnabledAt"} {
+	delete(in, "artAvailable")
+	for _, k := range []string{"actionToken", "publicUrl", "ntfyEnabledAt", "artEnabledAt"} {
 		delete(in, k)
 		if v, ok := old[k]; ok {
 			in[k] = v
@@ -185,11 +187,16 @@ func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 	if in.ntfy().URL != "" && in.ntfy().URL != old.ntfy().URL {
 		in["ntfyEnabledAt"] = mustJSON(time.Now().UnixMilli())
 	}
+	// Automatic pictures start with notes created from now on.
+	if in.art().Auto && !old.art().Auto {
+		in["artEnabledAt"] = mustJSON(time.Now().UnixMilli())
+	}
 	if err := s.store.PutSettings(uid, in); err != nil {
 		log.Printf("settings: %v", err)
 		writeErr(w, http.StatusInternalServerError, "could not save settings")
 		return
 	}
+	in["artAvailable"] = mustJSON(s.art != nil)
 	writeJSON(w, http.StatusOK, in)
 }
 

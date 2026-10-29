@@ -23,6 +23,7 @@ type ctxKey struct{}
 type Server struct {
 	store *Store
 	hub   *Hub
+	art   *Artist // nil when image generation isn't configured
 }
 
 func (s *Server) routes(web http.Handler) http.Handler {
@@ -38,6 +39,7 @@ func (s *Server) routes(web http.Handler) http.Handler {
 	mux.HandleFunc("GET /api/settings", s.auth(s.handleGetSettings))
 	mux.HandleFunc("PUT /api/settings", s.auth(s.handlePutSettings))
 	mux.HandleFunc("POST /api/settings/ntfy-test", s.auth(s.handleNtfyTest))
+	mux.HandleFunc("POST /api/items/{id}/art", s.auth(s.handleArt))
 	mux.HandleFunc("POST /api/remind/{token}/{item}/{op}", s.handleRemindAction)
 	mux.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusNotFound, "no such endpoint")
@@ -194,6 +196,9 @@ func (s *Server) handleSync(w http.ResponseWriter, r *http.Request) {
 	}
 	if changed {
 		s.hub.Publish(u.ID, rev)
+	}
+	if s.art != nil && len(req.Changes) > 0 {
+		s.art.Notice(u.ID, req.Changes)
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"rev": rev, "items": items})
 }

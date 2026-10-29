@@ -4,6 +4,10 @@ import android.content.Intent
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.material.icons.outlined.AddPhotoAlternate
+import androidx.compose.material.icons.outlined.AutoAwesome
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import androidx.compose.material.icons.outlined.PhotoCamera
 import androidx.compose.material.icons.outlined.NotificationsActive
 import androidx.compose.material.icons.outlined.PhotoLibrary
@@ -154,6 +158,17 @@ fun Editor(id: String, actions: AppActions, focusTitle: Boolean, onBack: () -> U
     var palette by remember { mutableStateOf(false) }
     var imageMenu by remember { mutableStateOf(false) }
     val picker = rememberImagePicker { refs -> Repo.update(id) { it.copy(images = it.images + refs) } }
+    // A picture is being painted on the server (SPEC §2d): the image ids it was asked for with.
+    var painting by remember(id) { mutableStateOf<List<String>?>(null) }
+    val paintScope = rememberCoroutineScope()
+    val imageIds = item.images.map { it.id }
+    LaunchedEffect(imageIds, painting) {
+        val before = painting ?: return@LaunchedEffect
+        if (imageIds != before) { painting = null; return@LaunchedEffect }
+        delay(150_000)
+        painting = null
+        actions.message("The picture didn’t arrive. Try again in a bit.")
+    }
 
     fun save(f: (Item) -> Item) { Repo.update(id, f) }
     fun saveChecks() = save { it.copy(checks = checks.map(CheckState::toCheck)) }
@@ -333,12 +348,25 @@ fun Editor(id: String, actions: AppActions, focusTitle: Boolean, onBack: () -> U
                         }
                         Box {
                             IconButton(onClick = { imageMenu = true }) {
-                                if (picker.busy()) androidx.compose.material3.CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+                                if (picker.busy() || painting != null) androidx.compose.material3.CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
                                 else Icon(Icons.Outlined.AddPhotoAlternate, "Add image", tint = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
                             DropdownMenu(imageMenu, { imageMenu = false }) {
                                 DropdownMenuItem(text = { Text("Take photo") }, leadingIcon = { Icon(Icons.Outlined.PhotoCamera, null) }, onClick = { imageMenu = false; picker.camera() })
                                 DropdownMenuItem(text = { Text("Choose from gallery") }, leadingIcon = { Icon(Icons.Outlined.PhotoLibrary, null) }, onClick = { imageMenu = false; picker.gallery() })
+                                if (Repo.artAvailable()) DropdownMenuItem(
+                                    text = { Text("Paint a picture") }, leadingIcon = { Icon(Icons.Outlined.AutoAwesome, null) }, enabled = painting == null,
+                                    onClick = {
+                                        imageMenu = false
+                                        if (item.title.isBlank() && item.body.isBlank() && item.checks.none { it.text.isNotBlank() }) {
+                                            actions.message("Write something first, so there’s something to paint")
+                                        } else {
+                                            painting = imageIds
+                                            actions.message("Painting a picture…")
+                                            paintScope.launch { Repo.illustrate(id)?.let { err -> painting = null; actions.message(err) } }
+                                        }
+                                    },
+                                )
                             }
                         }
                         IconButton(onClick = { sheet = "labels" }) { Icon(Icons.AutoMirrored.Outlined.Label, "Labels", tint = MaterialTheme.colorScheme.onSurfaceVariant) }

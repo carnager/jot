@@ -13,6 +13,8 @@ import { layoutGrids } from './views.js';
 import { ingest, imageFiles, imgEl, thumbWidth, ratio } from './images.js';
 import { openLightbox } from './lightbox.js';
 import { isDefaultAlerts, describeAlerts } from './alerts.js';
+import { serverSettings, illustrate } from './settings.js';
+import { toast } from './toast.js';
 
 let panel, id = null;
 let wasNonEmpty = false; // the open item had text when the editor opened
@@ -201,6 +203,7 @@ function build(it) {
       btn('calendar', 'Date & repeat (d)', (e) => datePop([id], e.currentTarget)),
       btn('tag', 'Labels (l)', (e) => labelPop([id], e.currentTarget)),
       btn('imageplus', 'Add image (or paste / drop one here)', () => pickImages()),
+      serverSettings().artAvailable ? btn('sparkles', 'Paint a picture for this note', () => paint(), { id: 'ed-paint' }) : null,
       btn('palette', 'Color (c)', (e) => colorPop([id], e.currentTarget)),
       btn(it.kind === 'list' ? 'text' : 'list', it.kind === 'list' ? 'Convert to note' : 'Convert to checklist', () => { act.convertKind(id); build(cur()); autosizeAll(); }),
       btn(it.archived ? 'unarchive' : 'archive', it.archived ? 'Unarchive (a)' : 'Archive (a)', () => act.toggleArchive([id]), { id: 'ed-arch' }),
@@ -286,16 +289,48 @@ let imagesEl = null, imagesSig = null;
 
 function renderImages(it) {
   const imgs = it.images || [];
-  const sig = imgs.map((x) => x.id).join(',');
+  const ids = imgs.map((x) => x.id).join(',');
+  if (painting.has(id) && painting.get(id) !== ids) painting.delete(id); // the picture arrived
+  const busy = painting.has(id);
+  const sig = ids + (busy ? '|painting' : '');
   if (sig === imagesSig) return;
   const first = imagesSig === null;
   imagesSig = sig;
-  const draw = () => fill(imagesEl, ...imgs.map((ref, i) => h('div', { class: 'ed-img', 'data-k': ref.id, style: { aspectRatio: imgs.length === 1 ? String(ratio(ref, 0.5, 2.6)) : '1' } },
-    h('button', { class: 'ed-img-open', title: 'View (opens full screen)', onclick: (e) => openLightbox(cur().images, i, e.currentTarget) }, imgEl(ref, thumbWidth(imgs.length === 1 ? 440 : 220))),
-    h('button', { class: 'ed-img-del', title: 'Remove image', onclick: () => act.removeImage(id, ref.id) }, icon('x', 15)))));
-  imagesEl.classList.toggle('multi', imgs.length > 1);
-  imagesEl.hidden = !imgs.length;
+  const tiles = imgs.length + (busy ? 1 : 0);
+  const draw = () => fill(imagesEl,
+    busy ? h('div', { class: 'ed-img painting', 'data-k': 'painting', style: { aspectRatio: tiles === 1 ? '1.5' : '1' } },
+      h('div', { class: 'paint-label' }, icon('sparkles', 18), 'Painting…')) : null,
+    ...imgs.map((ref, i) => h('div', { class: 'ed-img', 'data-k': ref.id, style: { aspectRatio: tiles === 1 ? String(ratio(ref, 0.5, 2.6)) : '1' } },
+      h('button', { class: 'ed-img-open', title: 'View (opens full screen)', onclick: (e) => openLightbox(cur().images, i, e.currentTarget) }, imgEl(ref, thumbWidth(tiles === 1 ? 440 : 220))),
+      h('button', { class: 'ed-img-del', title: 'Remove image', onclick: () => act.removeImage(id, ref.id) }, icon('x', 15)))));
+  imagesEl.classList.toggle('multi', tiles > 1);
+  imagesEl.hidden = !tiles;
+  document.getElementById('ed-paint')?.toggleAttribute('disabled', busy);
   if (first) draw(); else keyedFlip(imagesEl, 'data-k', draw);
+}
+
+// ======================= illustrations (§2d) =======================
+
+const painting = new Map(); // item id → its image ids when a picture was requested
+
+async function paint() {
+  const target = id, it = cur();
+  if (!it || painting.has(target)) return;
+  if (isEmpty(it)) { toast('Write something first, so there’s something to paint'); return; }
+  painting.set(target, (it.images || []).map((x) => x.id).join(','));
+  renderImages(it);
+  await store.sync(); // the server paints what it has, so push the latest text first
+  const r = await illustrate(target);
+  const refresh = () => { if (id === target && cur()) renderImages(cur()); };
+  if (!r.ok) {
+    painting.delete(target);
+    refresh();
+    toast(r.error);
+    return;
+  }
+  setTimeout(() => {
+    if (painting.delete(target)) { refresh(); if (id === target) toast('The picture didn’t arrive. Try again in a bit.'); }
+  }, 150_000);
 }
 
 async function addFiles(files) {

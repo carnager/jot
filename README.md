@@ -18,6 +18,8 @@ It's built for speed, with no Google services and no push dependencies.
   alerts per task (e.g. one day before plus on time), with Done/Snooze right from the notification.
   Optionally the server can push reminders to an [ntfy](https://ntfy.sh) topic for your desktop.
 - **Images**: paste, drop, camera or share sheet. They're downscaled and stripped of metadata on the device.
+- **Illustrations (optional)**: give the server an OpenAI key and it paints a picture for new notes (opt-in per user,
+  with a shared style so the cards match), or for any note on request.
 - **Sync** that merges per field and per checklist item, so editing the same note on two devices keeps both changes.
 - **Fast everywhere**: a full keyboard model and command palette on the web. On Android: swipe to complete or
   reschedule, a Quick Settings tile, a widget and a share target.
@@ -70,6 +72,22 @@ docker exec -it jot jot user add me
 ### Android
 Build it with `make android-release`. Signing reads `~/.local/android/release-keys/jot.properties` or the
 `JOT_ANDROID_*` environment variables, and falls back to the debug key. In the app, sign in with your server's URL.
+
+## Illustrations
+
+Notes with a picture are easier to spot. Put an OpenAI API key in the server's environment
+(`/etc/jot.env` or `~/.config/jot.env`):
+
+```sh
+JOT_OPENAI_KEY=sk-...
+#JOT_ART_MODEL=gpt-image-1-mini   # or gpt-image-1
+#JOT_ART_QUALITY=medium           # low | medium | high
+#JOT_ART_DAILY_LIMIT=25           # pictures per user per day
+```
+
+Then turn on **Settings → Illustrations** in the web app. New notes get a picture a few seconds after you add them, and
+the ✦ button in the editor (Android: image menu → Paint a picture) paints a new one for any note. The key stays on the
+server. The note's text is sent to OpenAI, which is why it's off until you turn it on.
 
 ## Moving from Google Keep
 

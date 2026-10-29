@@ -1,4 +1,4 @@
-// Server-side user settings (SPEC §2c): timezone, all-day reminder time, ntfy push. Cached for offline starts.
+// Server-side user settings (SPEC §2c): timezone, all-day reminder time, ntfy push, illustrations. Cached for offline starts.
 import { lsGet, lsSet } from './util.js';
 import { ui } from './ui.js';
 
@@ -33,6 +33,7 @@ export async function loadSettings() {
 export async function saveSettings(patch) {
   const next = { ...serverSettings(), ...patch };
   if (patch.ntfy) next.ntfy = { ...(serverSettings().ntfy || {}), ...patch.ntfy };
+  if (patch.art) next.art = { ...(serverSettings().art || {}), ...patch.art };
   try {
     const res = await fetch('/api/settings', {
       method: 'PUT', credentials: 'same-origin',
@@ -52,6 +53,18 @@ export async function saveSettings(patch) {
 export async function ntfyTest() {
   try {
     const res = await fetch('/api/settings/ntfy-test', {
+      method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: '{}',
+    });
+    return res.ok ? { ok: true } : { error: await errorOf(res) };
+  } catch {
+    return { error: 'Server not reachable' };
+  }
+}
+
+/** Ask the server to paint a picture for an item (SPEC §2d). It arrives later through sync. */
+export async function illustrate(id) {
+  try {
+    const res = await fetch(`/api/items/${encodeURIComponent(id)}/art`, {
       method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: '{}',
     });
     return res.ok ? { ok: true } : { error: await errorOf(res) };

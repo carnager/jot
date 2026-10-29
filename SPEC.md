@@ -301,6 +301,25 @@ done, archived, trashed or deleted, or has no due date.
 - The web Settings dialog has a "Reminders" section: all-day time, timezone, the ntfy topic and token, and a "Send test"
   button. Android shows the all-day time (synced) and a short note pointing to the web for ntfy.
 
+### Illustrations (§2d)
+Optional. When the server has an OpenAI key (`JOT_OPENAI_KEY`), it can paint a picture for a note, so notes are easier to spot.
+The picture is a normal attachment (id `art-…`) that the server adds to the item's `images` through the usual merge
+(it sets `fm.images` and `updatedAt`), so clients need nothing special to show it.
+- `GET /api/settings` includes `"artAvailable": true|false` (server-owned, never stored). The user's choices live in
+  `"art": { "auto": false, "style": "" }`.
+- `art.auto`: a few seconds (20 s) after a new item arrives in a sync without images and with some text, the server paints one. Only
+  items created after auto was turned on (`artEnabledAt`, server-owned) and within the last 24 h count. Each item gets **one**
+  automatic attempt, so a removed picture stays removed. If the user added an image in the meantime, the picture is dropped.
+- `art.style`: the look of every picture (default: a cheerful flat vector illustration). The prompt always adds "no text in the image".
+- `POST /api/items/{id}/art` → `202` paints a picture now (for any item, even with auto off). It replaces the picture it painted before
+  if that's still there, and otherwise puts the new one first. `404` if the item hasn't been synced yet, `429` once
+  the daily limit is reached (`JOT_ART_DAILY_LIMIT`, default 25 per user per 24 h), `503` without a key. Clients push their pending changes first.
+- Configuration: `JOT_OPENAI_KEY` (or `OPENAI_API_KEY`), `JOT_ART_MODEL` (default `gpt-image-1-mini`), `JOT_ART_QUALITY`
+  (`low` | `medium` | `high`, default `medium`), `JOT_ART_SIZE` (default `1536x1024`), `JOT_OPENAI_URL` (an OpenAI-compatible base URL).
+- Web: Settings → Illustrations (on/off, style), and a ✦ button in the editor that shows a "Painting…" tile until the picture arrives.
+  Android: "Paint a picture" in the editor's image menu.
+- Privacy: the note's title, text, checklist and labels go to OpenAI. That's why it's opt-in per user.
+
 ## 6. UX requirements (both clients)
 
 The fastest paths:

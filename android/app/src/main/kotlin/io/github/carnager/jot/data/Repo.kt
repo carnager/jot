@@ -289,6 +289,27 @@ object Repo {
         if (settings.current.signedIn) scope.launch { runCatching { syncSettings() } }
     }
 
+    // ---- illustrations (SPEC §2d) ----------------------------------------------------------------
+
+    /** Whether the server can paint pictures (it has an OpenAI key), from the cached settings. */
+    fun artAvailable(): Boolean =
+        runCatching { org.json.JSONObject(settings.serverSettings).optBoolean("artAvailable") }.getOrDefault(false)
+
+    /** Pushes the item, then asks the server to paint it a picture. Returns an error message, or null. */
+    suspend fun illustrate(id: String): String? {
+        val p = settings.current
+        if (!p.signedIn) return "Not connected to a server"
+        if (!sync()) return settings.current.syncError.ifEmpty { "Sync failed" }
+        return try {
+            Api.illustrate(p.server, p.token, id)
+            null
+        } catch (e: ApiException) {
+            e.message
+        } catch (e: Exception) {
+            "Server not reachable"
+        }
+    }
+
     // ---- live updates while the app is in the foreground ----------------------------------
 
     private var liveJob: Job? = null

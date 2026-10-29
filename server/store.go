@@ -64,7 +64,7 @@ func OpenStore(dir string) (*Store, error) {
 	// A single connection serialises writers; at personal scale this is
 	// simpler and faster than fighting SQLITE_BUSY.
 	db.SetMaxOpenConns(1)
-	if _, err := db.Exec(schema + attachmentSchema + reminderSchema); err != nil {
+	if _, err := db.Exec(schema + attachmentSchema + reminderSchema + artSchema); err != nil {
 		db.Close()
 		return nil, fmt.Errorf("init schema: %w", err)
 	}

@@ -103,6 +103,11 @@ object Api {
         }
     }
 
+    /** POST /api/items/{id}/art: the server paints a picture, which arrives through sync (SPEC §2d). */
+    suspend fun illustrate(server: String, token: String, id: String) {
+        post(server, "/api/items/$id/art", token, JSONObject())
+    }
+
     fun attachmentUrl(server: String, id: String, width: Int? = null) =
         "$server/api/attachments/$id" + (width?.let { "?w=$it" } ?: "")
 
