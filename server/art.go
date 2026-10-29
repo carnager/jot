@@ -44,7 +44,7 @@ const defaultArtStyle = "A cheerful flat vector illustration with clean shapes, 
 type artConfig struct {
 	key, baseURL, model, quality, size string
 	dailyLimit                         int
-	delay                              time.Duration // wait after a note appears, so its text can settle
+	delay                              time.Duration // quiet time after a note's last change, so its text can settle
 }
 
 // artConfigFromEnv returns the configuration, or ok=false when no key is set (the feature is off).
@@ -56,7 +56,7 @@ func artConfigFromEnv() (cfg artConfig, ok bool) {
 		quality:    artEnv("JOT_ART_QUALITY", "medium"),
 		size:       artEnv("JOT_ART_SIZE", "1536x1024"),
 		dailyLimit: 25,
-		delay:      20 * time.Second,
+		delay:      4 * time.Second,
 	}
 	if n, err := strconv.Atoi(artEnv("JOT_ART_DAILY_LIMIT", "")); err == nil && n >= 0 {
 		cfg.dailyLimit = n
@@ -158,7 +158,10 @@ func (a *Artist) Notice(userID int64, changes []json.RawMessage) {
 		if len(it.Images) > 0 || it.Deleted || it.TrashedAt > 0 || it.Archived || it.Done || !it.hasText() {
 			continue
 		}
-		res, err := a.store.db.Exec(`INSERT OR IGNORE INTO art (user_id, item_id, state, not_before) VALUES (?, ?, 'pending', ?)`,
+		// Every change while it waits pushes the start back, so a note still being typed is painted once
+		// it settles. Notes that had their turn already (done, skipped, removed) are left alone.
+		res, err := a.store.db.Exec(`INSERT INTO art (user_id, item_id, state, not_before) VALUES (?, ?, 'pending', ?)
+			ON CONFLICT (user_id, item_id) DO UPDATE SET not_before = excluded.not_before WHERE art.state = 'pending' AND art.forced = 0`,
 			userID, meta.ID, now.Add(a.cfg.delay).UnixMilli())
 		if err != nil {
 			log.Printf("art: queue: %v", err)

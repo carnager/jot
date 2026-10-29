@@ -135,6 +135,27 @@ func TestArtAutoForNewNotes(t *testing.T) {
 	}
 }
 
+func TestArtWaitsForTypingToSettle(t *testing.T) {
+	a, uid, prompts := testArtist(t, true)
+	a.cfg.delay = time.Hour
+	now := time.Now().UnixMilli()
+	syncItem(t, a, uid, map[string]any{"id": "n1", "title": "Schw", "createdAt": now, "updatedAt": now})
+	var first int64
+	a.store.db.QueryRow(`SELECT not_before FROM art WHERE item_id = 'n1'`).Scan(&first)
+	time.Sleep(5 * time.Millisecond)
+	syncItem(t, a, uid, map[string]any{"id": "n1", "title": "Schwimmen Daria", "createdAt": now, "updatedAt": now + 1})
+	var second int64
+	a.store.db.QueryRow(`SELECT not_before FROM art WHERE item_id = 'n1'`).Scan(&second)
+	if second <= first {
+		t.Fatalf("an edit didn't push the start back: %d → %d", first, second)
+	}
+	a.store.db.Exec(`UPDATE art SET not_before = 0`)
+	drain(t, a)
+	if p := prompts(); len(p) != 1 || !strings.Contains(p[0], "Schwimmen Daria") {
+		t.Fatalf("prompts = %q", p)
+	}
+}
+
 func TestArtOffByDefault(t *testing.T) {
 	a, uid, prompts := testArtist(t, false)
 	now := time.Now().UnixMilli()
