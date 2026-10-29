@@ -160,6 +160,9 @@ import java.util.Locale
 
 private val MAIN_VIEWS = listOf(Views.TODAY, Views.UPCOMING, Views.NOTES)
 private const val OTHER_PAGE = "other"
+private const val FADE_OUT = 90f
+private const val FADE_IN = 165f
+private const val FADE_TOTAL = FADE_OUT + FADE_IN
 
 private data class ContentKey(val view: String, val label: String?, val search: Boolean, val empty: Boolean)
 
@@ -373,36 +376,62 @@ fun MainScreen(actions: AppActions, onEdit: (String, Boolean) -> Unit, onSetting
                     if (pageId == OTHER_PAGE) lastOther = otherKey
                     var visited by remember { mutableStateOf(setOf<String>()) }
                     if (pageId !in visited) visited = visited + pageId
+                    // Material fade-through: the outgoing page fades out to the shared surface (FADE_OUT ms), then
+                    // the incoming one fades and scales in (FADE_IN ms). The two are never drawn in the same frame.
                     var under by remember { mutableStateOf<String?>(null) }
                     var shown by remember { mutableStateOf(pageId) }
-                    var enter by remember { androidx.compose.runtime.mutableFloatStateOf(1f) }
-                    // Reset in the same frame as the switch: the incoming page must never draw at full alpha first.
-                    if (pageId != shown) { under = shown; shown = pageId; enter = 0f }
-                    LaunchedEffect(pageId) {
-                        if (under == null) return@LaunchedEffect
-                        androidx.compose.animation.core.animate(0f, 1f, animationSpec = androidx.compose.animation.core.tween(Motion.MEDIUM, easing = androidx.compose.animation.core.LinearOutSlowInEasing)) { v, _ -> enter = v }
+                    var t by remember { androidx.compose.runtime.mutableFloatStateOf(FADE_TOTAL) }
+                    var outFrom by remember { androidx.compose.runtime.mutableFloatStateOf(1f) }
+                    var inFrom by remember { androidx.compose.runtime.mutableFloatStateOf(0f) }
+                    var run by remember { androidx.compose.runtime.mutableIntStateOf(0) }
+                    fun outAlpha() = outFrom * (1f - androidx.compose.animation.core.FastOutLinearInEasing.transform((t / FADE_OUT).coerceIn(0f, 1f)))
+                    fun inProgress() = androidx.compose.animation.core.LinearOutSlowInEasing.transform(((t - FADE_OUT) / FADE_IN).coerceIn(0f, 1f))
+                    fun inAlpha() = inFrom + (1f - inFrom) * inProgress()
+                    if (pageId != shown) {
+                        // Switching (also mid-animation): whatever is visible right now fades out from where it is.
+                        val outgoingVisible = under != null && t < FADE_OUT
+                        val visiblePage = if (outgoingVisible) under!! else shown
+                        val visibleAlpha = if (outgoingVisible) outAlpha() else if (t < FADE_TOTAL) inAlpha() else 1f
+                        if (visiblePage == pageId) {
+                            // Back to the page that is still (partly) visible: just fade it in from there.
+                            under = null; inFrom = visibleAlpha; t = FADE_OUT
+                        } else {
+                            under = visiblePage; outFrom = visibleAlpha; inFrom = 0f; t = 0f
+                        }
+                        shown = pageId; run++
+                    }
+                    LaunchedEffect(run) {
+                        if (run == 0) return@LaunchedEffect
+                        val start = t
+                        androidx.compose.animation.core.animate(start, FADE_TOTAL, animationSpec = androidx.compose.animation.core.tween((FADE_TOTAL - start).toInt(), easing = androidx.compose.animation.core.LinearEasing)) { v, _ -> t = v }
                         under = null
                     }
                     var pageTop by remember { mutableStateOf(0f) }
                     val glow = scheme.primary.copy(alpha = if (dark) 0.11f else 0.10f)
                     val pageBg = scheme.surface
-                    val lift = with(density) { 10.dp.toPx() }
                     Box(Modifier.fillMaxSize().onGloballyPositioned { pageTop = it.positionInRoot().y }) {
                         (MAIN_VIEWS + OTHER_PAGE).forEach { v ->
                             if (v in visited) key(v) {
                                 val active = v == pageId
-                                val drawn = active || v == under
+                                val outgoing = v == under && t < FADE_OUT
+                                val incoming = active && t >= FADE_OUT
+                                val settled = active && t >= FADE_TOTAL
+                                val drawn = outgoing || incoming || settled || (active && under == null && t >= FADE_OUT)
                                 Box(
                                     Modifier.fillMaxSize().zIndex(if (active) 1f else 0f)
                                         .graphicsLayer {
-                                            alpha = if (active) enter else 1f
-                                            translationY = if (active) (1f - enter) * lift else 0f
-                                            // One offscreen layer for the incoming page, so it fades as a whole.
+                                            // One offscreen layer per page, so a page fades as a whole.
                                             compositingStrategy = androidx.compose.ui.graphics.CompositingStrategy.Offscreen
+                                            when {
+                                                outgoing -> { alpha = outAlpha(); scaleX = 1f; scaleY = 1f }
+                                                incoming -> { alpha = inAlpha(); val sc = 0.96f + 0.04f * inProgress(); scaleX = sc; scaleY = sc }
+                                                else -> { alpha = 1f; scaleX = 1f; scaleY = 1f }
+                                            }
                                         }
                                         // Pages that are neither shown nor fading out aren't drawn at all.
                                         .drawWithContent { if (drawn) drawContent() }
-                                        // Opaque, with this page's slice of the screen-wide warm glow (no seam).
+                                        // Opaque, with this page's slice of the screen-wide warm glow (no seam): a page
+                                        // fading out reveals exactly the same surface it sits on.
                                         .drawBehind {
                                             drawRect(pageBg)
                                             drawRect(
@@ -420,12 +449,13 @@ fun MainScreen(actions: AppActions, onEdit: (String, Boolean) -> Unit, onSetting
                                     val shared = LocalSharedScope.current
                                     androidx.compose.runtime.CompositionLocalProvider(LocalSharedScope provides if (active) shared else null) {
                                         if (v == OTHER_PAGE) {
-                                            // Label → label, Done, Archive, Trash, search: fade the new content in over the old.
+                                            // Label → label, Done, Archive, Trash, search: the same fade-through, never both at once.
                                             AnimatedContent(
                                                 targetState = lastOther,
                                                 transitionSpec = {
-                                                    (fadeIn(Motion.medium()) togetherWith fadeOut(androidx.compose.animation.core.tween(0, delayMillis = Motion.MEDIUM)))
-                                                        .apply { targetContentZIndex = 1f }
+                                                    (fadeIn(androidx.compose.animation.core.tween(FADE_IN.toInt(), delayMillis = FADE_OUT.toInt(), easing = androidx.compose.animation.core.LinearOutSlowInEasing)) +
+                                                        androidx.compose.animation.scaleIn(androidx.compose.animation.core.tween(FADE_IN.toInt(), delayMillis = FADE_OUT.toInt(), easing = androidx.compose.animation.core.LinearOutSlowInEasing), initialScale = 0.96f)) togetherWith
+                                                        fadeOut(androidx.compose.animation.core.tween(FADE_OUT.toInt(), easing = androidx.compose.animation.core.FastOutLinearInEasing))
                                                 },
                                                 label = "content",
                                             ) { k ->
