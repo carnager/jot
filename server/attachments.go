@@ -189,6 +189,30 @@ func (s *Store) CollectAttachments(minAge time.Duration) (int, error) {
 	if err := rows.Err(); err != nil {
 		return 0, err
 	}
+	// Illustration characters' reference images live in the settings (SPEC §2d).
+	rows, err = s.db.Query(`SELECT user_id, data FROM settings WHERE data LIKE '%"characters"%'`)
+	if err != nil {
+		return 0, err
+	}
+	for rows.Next() {
+		var uid int64
+		var data string
+		if err := rows.Scan(&uid, &data); err != nil {
+			rows.Close()
+			return 0, err
+		}
+		var set Settings
+		if json.Unmarshal([]byte(data), &set) != nil {
+			continue
+		}
+		for _, c := range set.art().Characters {
+			referenced[[2]string{strconv.FormatInt(uid, 10), c.Image}] = true
+		}
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return 0, err
+	}
 
 	cutoff := time.Now().Add(-minAge).UnixMilli()
 	rows, err = s.db.Query(`SELECT user_id, id FROM attachments WHERE created < ?`, cutoff)

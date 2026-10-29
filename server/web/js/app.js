@@ -11,7 +11,7 @@ import { mountCapture, focusCapture, refreshCapture, newBlank, createImageNote }
 import { openLightbox, lightboxOpen } from './lightbox.js';
 import { fireTimes, leadText } from './alerts.js';
 import { serverSettings, loadSettings, saveSettings as saveServerSettings, ntfyTest, deviceZone, zoneList } from './settings.js';
-import { ingest, resumeUploads } from './images.js';
+import { ingest, resumeUploads, uploadNow, imageURL, imageFiles } from './images.js';
 import { mountEditor, openEditor, closeEditor, itemMenu, editorHasFocus } from './editor.js';
 import { datePop, labelPop, colorPop, closePop, popOpen, anchorFor, promptPop } from './popovers.js';
 import { openPalette, paletteOpen } from './palette.js';
@@ -859,6 +859,53 @@ function illustrationsSection() {
     placeholder: 'A cheerful flat vector illustration with clean shapes, bright saturated colors and soft light',
     onchange: (e) => save({ style: e.target.value.trim() }, 'Style saved'),
   });
+  // Characters (§2d): recurring figures, each with a reference picture. The server picks the ones that fit a note.
+  const chars = (art.characters || []).map((c) => ({ ...c }));
+  const list = h('div', { class: 'char-list' });
+  const saveChars = (okText = 'Characters saved') => save({ characters: chars.filter((c) => c.image) }, okText);
+  const pick = (onFile) => {
+    const input = h('input', { type: 'file', accept: 'image/*', style: { display: 'none' } });
+    input.onchange = () => { const f = imageFiles(input.files)[0]; input.remove(); if (f) onFile(f); };
+    document.body.append(input);
+    input.click();
+  };
+  const upload = async (f) => {
+    msg.className = 'set-msg'; msg.textContent = 'Uploading…';
+    try { return await uploadNow(f); } catch (e) { msg.className = 'set-msg err'; msg.textContent = e.message; return null; }
+  };
+  const drawList = (focusLast = false) => {
+    fill(list, ...chars.map((c, i) => h('div', { class: 'char-row' },
+      h('button', {
+        class: 'char-pic', title: 'Change picture',
+        onclick: () => pick(async (f) => { const id = await upload(f); if (id) { c.image = id; drawList(); saveChars('Picture changed'); } }),
+      }, h('img', { src: imageURL(c.image, 240), alt: '' })),
+      h('div', { class: 'char-fields' },
+        h('input', {
+          class: 'field', value: c.name || '', placeholder: 'Name, e.g. Bear', maxlength: '40',
+          onchange: (e) => { c.name = e.target.value.trim(); saveChars(); },
+        }),
+        h('input', {
+          class: 'field wide', value: c.about || '', placeholder: 'Who they are and when they show up, e.g. calm, cosy: family, home, food',
+          maxlength: '300', onchange: (e) => { c.about = e.target.value.trim(); saveChars(); },
+        })),
+      h('button', {
+        class: 'icon-btn sm', title: 'Remove character',
+        onclick: () => { chars.splice(i, 1); drawList(); saveChars('Character removed'); },
+      }, icon('x', 15)))),
+    chars.length < 6 ? h('button', {
+      class: 'btn sm char-add',
+      onclick: () => pick(async (f) => {
+        const id = await upload(f);
+        if (!id) return;
+        chars.push({ name: '', about: '', image: id });
+        drawList(true);
+        saveChars('Character added. Give it a name.');
+      }),
+    }, icon('imageplus', 14), 'Add character') : null);
+    if (focusLast) list.querySelectorAll('.char-row:last-of-type input')[0]?.focus();
+  };
+  drawList();
+
   return h('div', { class: 'settings-group' },
     h('div', { class: 'settings-h' }, 'Illustrations'),
     h('div', { class: 'settings-row' },
@@ -869,7 +916,11 @@ function illustrationsSection() {
     h('div', { class: 'settings-row col' },
       h('div', null, h('div', { class: 't' }, 'Style'),
         h('div', { class: 'd' }, 'How every picture should look, so the cards match. Leave empty for the default. Repaint a single note from its editor (✦).')),
-      h('div', { class: 'ntfy-ctl' }, style, msg)));
+      h('div', { class: 'ntfy-ctl' }, style)),
+    h('div', { class: 'settings-row col' },
+      h('div', null, h('div', { class: 't' }, 'Characters'),
+        h('div', { class: 'd' }, 'Recurring figures for the pictures. Each note gets the ones that fit it (one, a few or all), going by their descriptions. Best: the character alone on a plain background.')),
+      h('div', { class: 'ntfy-ctl' }, list, msg)));
 }
 
 function settings() {

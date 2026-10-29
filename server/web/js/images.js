@@ -137,6 +137,17 @@ export async function ingest(files) {
   return refs;
 }
 
+/** Upload one image right away (pictures in settings, not items) and return its attachment id. */
+export async function uploadNow(file) {
+  const p = await prepareImage(file);
+  const id = ulid();
+  const res = await fetch(`/api/attachments/${encodeURIComponent(id)}`, {
+    method: 'PUT', credentials: 'same-origin', headers: { 'Content-Type': p.mime }, body: p.blob,
+  });
+  if (!res.ok) throw new Error(res.status === 413 ? 'The image is too large' : 'The image could not be uploaded');
+  return id;
+}
+
 // ---------- upload pump ----------
 async function pump() {
   if (busy || !pending.size) return;

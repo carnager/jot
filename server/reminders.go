@@ -171,6 +171,10 @@ func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	if n := len(in.art().Characters); n > maxArtCharacters {
+		writeErr(w, http.StatusBadRequest, fmt.Sprintf("at most %d illustration characters", maxArtCharacters))
+		return
+	}
 	// Server-owned keys can't be set by clients.
 	delete(in, "artAvailable")
 	for _, k := range []string{"actionToken", "publicUrl", "ntfyEnabledAt", "artEnabledAt"} {

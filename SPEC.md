@@ -312,13 +312,18 @@ The picture is a normal attachment (id `art-…`) that the server adds to the it
   (each synced edit restarts the wait). Only
   items created after auto was turned on (`artEnabledAt`, server-owned) and within the last 24 h count. Each item gets **one**
   automatic attempt, so a removed picture stays removed. If the user added an image in the meantime, the picture is dropped.
+- `art.characters`: up to 6 recurring figures `{ "name": "Bear", "about": "calm, cosy: family, home, food", "image": "<attachment id>" }`.
+  The image is a normal attachment (uploaded with `PUT /api/attachments/{id}`) that cleanup keeps as long as the settings reference it.
+  With characters set, a text model (`JOT_ART_TEXT_MODEL`, default `gpt-5.4-mini`) first picks the ones that fit the note (usually one, several
+  or all when it suits) and writes a short English scene. Then only their pictures go to the image edits endpoint as references, numbered
+  in the prompt. If the text model fails, every character is sent and the image model is told to pick.
 - `art.style`: the look of every picture (default: a cheerful flat vector illustration). The prompt always adds "no text in the image".
 - `POST /api/items/{id}/art` → `202` paints a picture now (for any item, even with auto off). It replaces the picture it painted before
   if that's still there, and otherwise puts the new one first. `404` if the item hasn't been synced yet, `429` once
   the daily limit is reached (`JOT_ART_DAILY_LIMIT`, default 25 per user per 24 h), `503` without a key. Clients push their pending changes first.
 - Configuration: `JOT_OPENAI_KEY` (or `OPENAI_API_KEY`), `JOT_ART_MODEL` (default `gpt-image-1-mini`), `JOT_ART_QUALITY`
   (`low` | `medium` | `high`, default `medium`), `JOT_ART_SIZE` (default `1536x1024`), `JOT_OPENAI_URL` (an OpenAI-compatible base URL).
-- Web: Settings → Illustrations (on/off, style), and a ✦ button in the editor that shows a "Painting…" tile until the picture arrives.
+- Web: Settings → Illustrations (on/off, style, characters with picture, name and description), and a ✦ button in the editor that shows a "Painting…" tile until the picture arrives.
   Android: "Paint a picture" in the editor's image menu.
 - Privacy: the note's title, text, checklist and labels go to OpenAI. That's why it's opt-in per user.
 

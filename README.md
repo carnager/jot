@@ -83,12 +83,15 @@ JOT_OPENAI_KEY=sk-...
 #JOT_ART_MODEL=gpt-image-1-mini
 #JOT_ART_QUALITY=medium
 #JOT_ART_DAILY_LIMIT=25
+#JOT_ART_TEXT_MODEL=gpt-5.4-mini
 ```
 The model can also be `gpt-image-1`, the quality `low`, `medium` or `high`, and the limit counts pictures per user per day.
 systemd's env files have no inline comments, so keep comments on their own lines.
 
 Then turn on **Settings → Illustrations** in the web app. New notes get a picture a few seconds after you add them, and
-the ✦ button in the editor (Android: image menu → Paint a picture) paints a new one for any note. The key stays on the
+the ✦ button in the editor (Android: image menu → Paint a picture) paints a new one for any note.
+Add **characters** there too (say a bear, a lion and a crocodile, each with a picture and a line about when they fit):
+every picture then stars the ones that suit the note, drawn the same way each time. The key stays on the
 server. The note's text is sent to OpenAI, which is why it's off until you turn it on.
 
 ## Moving from Google Keep

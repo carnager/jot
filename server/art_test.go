@@ -17,9 +17,8 @@ import (
 	"time"
 )
 
-// fakeOpenAI answers image requests with a small JPEG and records the prompts.
-func fakeOpenAI(t *testing.T) (*httptest.Server, func() []string) {
-	t.Helper()
+// testJPEG is a small blue picture, base64-encoded like the API returns it.
+func testJPEG() string {
 	img := image.NewRGBA(image.Rect(0, 0, 48, 32))
 	for x := range 48 {
 		for y := range 32 {
@@ -28,7 +27,13 @@ func fakeOpenAI(t *testing.T) (*httptest.Server, func() []string) {
 	}
 	var buf bytes.Buffer
 	jpeg.Encode(&buf, img, nil)
-	b64 := base64.StdEncoding.EncodeToString(buf.Bytes())
+	return base64.StdEncoding.EncodeToString(buf.Bytes())
+}
+
+// fakeOpenAI answers image requests with a small JPEG and records the prompts.
+func fakeOpenAI(t *testing.T) (*httptest.Server, func() []string) {
+	t.Helper()
+	b64 := testJPEG()
 	var mu sync.Mutex
 	var prompts []string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -204,5 +209,106 @@ func TestArtRegenerateReplacesOnlyItsOwnPicture(t *testing.T) {
 	drain(t, a)
 	if err := a.Request(uid, "n1"); err != errArtLimit {
 		t.Fatalf("over the daily limit: %v", err)
+	}
+}
+
+// fakeOpenAIWithCast also answers the character plan (with plan, or a 500 when plan is "") and
+// image edits, recording how many reference images each edit carried.
+func fakeOpenAIWithCast(t *testing.T, plan string) (*httptest.Server, func() (prompts []string, refs []int)) {
+	t.Helper()
+	var mu sync.Mutex
+	var prompts []string
+	var refs []int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/chat/completions":
+			if plan == "" {
+				http.Error(w, `{"error":{"message":"overloaded"}}`, http.StatusInternalServerError)
+				return
+			}
+			fmt.Fprintf(w, `{"choices":[{"message":{"content":%q}}]}`, plan)
+		case "/images/edits":
+			if err := r.ParseMultipartForm(32 << 20); err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+			mu.Lock()
+			prompts = append(prompts, r.FormValue("prompt"))
+			refs = append(refs, len(r.MultipartForm.File["image[]"]))
+			mu.Unlock()
+			fmt.Fprintf(w, `{"data":[{"b64_json":%q}]}`, testJPEG())
+		default:
+			http.Error(w, `{"error":{"message":"unexpected"}}`, http.StatusBadRequest)
+		}
+	}))
+	t.Cleanup(srv.Close)
+	return srv, func() ([]string, []int) {
+		mu.Lock()
+		defer mu.Unlock()
+		return append([]string(nil), prompts...), append([]int(nil), refs...)
+	}
+}
+
+func castArtist(t *testing.T, plan string) (*Artist, int64, func() ([]string, []int)) {
+	t.Helper()
+	s, uid := testStore(t)
+	srv, calls := fakeOpenAIWithCast(t, plan)
+	a := NewArtist(s, NewHub(), artConfig{key: "test-key", baseURL: srv.URL, model: "m", quality: "low", size: "1536x1024", textModel: "t", dailyLimit: 10})
+	var buf bytes.Buffer
+	jpeg.Encode(&buf, image.NewRGBA(image.Rect(0, 0, 20, 20)), nil)
+	var cast []artCharacter
+	for _, name := range []string{"Crocodile", "Lion", "Bear"} {
+		id := "ref-" + strings.ToLower(name)
+		if _, err := s.PutAttachment(uid, id, "image/jpeg", buf.Bytes()); err != nil {
+			t.Fatal(err)
+		}
+		cast = append(cast, artCharacter{Name: name, About: "a friendly " + strings.ToLower(name), Image: id})
+	}
+	if err := s.PutSettings(uid, Settings{"art": mustJSON(artSettings{Characters: cast})}); err != nil {
+		t.Fatal(err)
+	}
+	return a, uid, calls
+}
+
+func TestArtCharactersPickedByPlan(t *testing.T) {
+	a, uid, calls := castArtist(t, `{"characters":["bear"],"scene":"A bear swims laps in a sunny pool."}`)
+	now := time.Now().UnixMilli()
+	syncItem(t, a, uid, map[string]any{"id": "n1", "title": "Schwimmen Daria", "createdAt": now, "updatedAt": now})
+	if err := a.Request(uid, "n1"); err != nil {
+		t.Fatal(err)
+	}
+	drain(t, a)
+	prompts, refs := calls()
+	if len(refs) != 1 || refs[0] != 1 {
+		t.Fatalf("edits sent %v reference images, want one call with 1 (the bear)", refs)
+	}
+	if p := prompts[0]; !strings.Contains(p, "Image 1: Bear") || strings.Contains(p, "Lion") || !strings.Contains(p, "swims laps") {
+		t.Fatalf("prompt = %q", p)
+	}
+	if imgs := storedImages(t, a, uid, "n1"); len(imgs) != 1 {
+		t.Fatalf("images = %v", imgs)
+	}
+}
+
+func TestArtCharactersWithoutPlanSendsEveryone(t *testing.T) {
+	a, uid, calls := castArtist(t, "")
+	now := time.Now().UnixMilli()
+	syncItem(t, a, uid, map[string]any{"id": "n1", "title": "Team lunch", "createdAt": now, "updatedAt": now})
+	a.Request(uid, "n1")
+	drain(t, a)
+	prompts, refs := calls()
+	if len(refs) != 1 || refs[0] != 3 || !strings.Contains(prompts[0], "Image 3: Bear") || !strings.Contains(prompts[0], "usually one") {
+		t.Fatalf("refs = %v, prompts = %q", refs, prompts)
+	}
+}
+
+func TestArtCharacterImagesSurviveCleanup(t *testing.T) {
+	a, uid, _ := castArtist(t, "")
+	a.store.db.Exec(`UPDATE attachments SET created = 0`)
+	if _, err := a.store.CollectAttachments(time.Hour); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := a.store.Attachment(uid, "ref-bear"); err != nil {
+		t.Fatalf("character image collected: %v", err)
 	}
 }
