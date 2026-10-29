@@ -50,18 +50,28 @@ type artConfig struct {
 // artConfigFromEnv returns the configuration, or ok=false when no key is set (the feature is off).
 func artConfigFromEnv() (cfg artConfig, ok bool) {
 	cfg = artConfig{
-		key:        env("JOT_OPENAI_KEY", os.Getenv("OPENAI_API_KEY")),
-		baseURL:    strings.TrimRight(env("JOT_OPENAI_URL", "https://api.openai.com/v1"), "/"),
-		model:      env("JOT_ART_MODEL", "gpt-image-1-mini"),
-		quality:    env("JOT_ART_QUALITY", "medium"),
-		size:       env("JOT_ART_SIZE", "1536x1024"),
+		key:        artEnv("JOT_OPENAI_KEY", artEnv("OPENAI_API_KEY", "")),
+		baseURL:    strings.TrimRight(artEnv("JOT_OPENAI_URL", "https://api.openai.com/v1"), "/"),
+		model:      artEnv("JOT_ART_MODEL", "gpt-image-1-mini"),
+		quality:    artEnv("JOT_ART_QUALITY", "medium"),
+		size:       artEnv("JOT_ART_SIZE", "1536x1024"),
 		dailyLimit: 25,
 		delay:      20 * time.Second,
 	}
-	if n, err := strconv.Atoi(os.Getenv("JOT_ART_DAILY_LIMIT")); err == nil && n >= 0 {
+	if n, err := strconv.Atoi(artEnv("JOT_ART_DAILY_LIMIT", "")); err == nil && n >= 0 {
 		cfg.dailyLimit = n
 	}
 	return cfg, cfg.key != ""
+}
+
+// artEnv reads a setting without a trailing "# comment": systemd's env files keep those as part
+// of the value, which once turned the model name into "gpt-image-1-mini   # or gpt-image-1".
+func artEnv(key, def string) string {
+	v, _, _ := strings.Cut(os.Getenv(key), "#")
+	if v = strings.TrimSpace(v); v != "" {
+		return v
+	}
+	return def
 }
 
 type artSettings struct {

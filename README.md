@@ -80,10 +80,12 @@ Notes with a picture are easier to spot. Put an OpenAI API key in the server's e
 
 ```sh
 JOT_OPENAI_KEY=sk-...
-#JOT_ART_MODEL=gpt-image-1-mini   # or gpt-image-1
-#JOT_ART_QUALITY=medium           # low | medium | high
-#JOT_ART_DAILY_LIMIT=25           # pictures per user per day
+#JOT_ART_MODEL=gpt-image-1-mini
+#JOT_ART_QUALITY=medium
+#JOT_ART_DAILY_LIMIT=25
 ```
+The model can also be `gpt-image-1`, the quality `low`, `medium` or `high`, and the limit counts pictures per user per day.
+systemd's env files have no inline comments, so keep comments on their own lines.
 
 Then turn on **Settings → Illustrations** in the web app. New notes get a picture a few seconds after you add them, and
 the ✦ button in the editor (Android: image menu → Paint a picture) paints a new one for any note. The key stays on the
