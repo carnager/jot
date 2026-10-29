@@ -47,6 +47,7 @@ const defaultArtStyle = "A cheerful flat vector illustration with clean shapes, 
 type artConfig struct {
 	key, baseURL, model, quality, size string
 	textModel                          string // picks the characters for a note and describes the scene
+	fidelity                           string // input_fidelity for reference images; "" = don't send (most models reject it)
 	dailyLimit                         int
 	delay                              time.Duration // quiet time after a note's last change, so its text can settle
 }
@@ -60,6 +61,7 @@ func artConfigFromEnv() (cfg artConfig, ok bool) {
 		quality:    artEnv("JOT_ART_QUALITY", "medium"),
 		size:       artEnv("JOT_ART_SIZE", "1536x1024"),
 		textModel:  artEnv("JOT_ART_TEXT_MODEL", "gpt-5.4-mini"),
+		fidelity:   artEnv("JOT_ART_FIDELITY", ""),
 		dailyLimit: 25,
 		delay:      4 * time.Second,
 	}
@@ -593,9 +595,9 @@ func (a *Artist) edit(ctx context.Context, prompt string, refs []artRef) ([]byte
 		"model": a.cfg.model, "prompt": prompt, "n": "1", "size": a.cfg.size, "quality": a.cfg.quality,
 		"output_format": "jpeg", "output_compression": "85",
 	}
-	// Only some models take input_fidelity; the others reject it.
-	if strings.HasPrefix(a.cfg.model, "gpt-image-1") {
-		fields["input_fidelity"] = "high"
+	// Only some models take input_fidelity (gpt-image-1-mini doesn't, despite the docs), so it's opt-in.
+	if a.cfg.fidelity != "" {
+		fields["input_fidelity"] = a.cfg.fidelity
 	}
 	for k, v := range fields {
 		mw.WriteField(k, v)

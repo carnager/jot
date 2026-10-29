@@ -317,6 +317,7 @@ The picture is a normal attachment (id `art-…`) that the server adds to the it
   With characters set, a text model (`JOT_ART_TEXT_MODEL`, default `gpt-5.4-mini`) first picks the ones that fit the note (usually one, several
   or all when it suits) and writes a short English scene. Then only their pictures go to the image edits endpoint as references, numbered
   in the prompt. If the text model fails, every character is sent and the image model is told to pick.
+  `JOT_ART_FIDELITY=high` sends `input_fidelity` with the references, for models that accept it (off by default: `gpt-image-1-mini` rejects it).
 - `art.style`: the look of every picture (default: a cheerful flat vector illustration). The prompt always adds "no text in the image".
 - `POST /api/items/{id}/art` → `202` paints a picture now (for any item, even with auto off). It replaces the picture it painted before
   if that's still there, and otherwise puts the new one first. `404` if the item hasn't been synced yet, `429` once
