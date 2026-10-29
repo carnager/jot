@@ -2,6 +2,12 @@ package io.github.carnager.jot.ui
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.runtime.key
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.zIndex
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
@@ -128,6 +134,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.geometry.Offset
@@ -149,6 +156,8 @@ import kotlinx.coroutines.launch
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 import java.util.Locale
+
+private val MAIN_VIEWS = listOf(Views.TODAY, Views.UPCOMING, Views.NOTES)
 
 private data class ContentKey(val view: String, val label: String?, val search: Boolean, val empty: Boolean)
 
@@ -309,11 +318,7 @@ fun MainScreen(actions: AppActions, onEdit: (String, Boolean) -> Unit, onSetting
                     modifier = Modifier.weight(1f).fillMaxWidth(),
                 ) {
                     val empty = sections.all { it.items.isEmpty() }
-                    AnimatedContent(
-                        targetState = ContentKey(view, label, query != null, empty),
-                        transitionSpec = { fadeIn(Motion.medium()) togetherWith fadeOut(Motion.fast()) },
-                        label = "content",
-                    ) { key ->
+                    val renderPage: @Composable (ContentKey) -> Unit = { key ->
                         // Each page derives its own sections: while animating out, a page must not see the new view's data.
                         val sections = remember(items, key, query) {
                             if (key.search) Views.search(items, query ?: "") else Views.sections(key.view, key.label, items)
@@ -353,6 +358,43 @@ fun MainScreen(actions: AppActions, onEdit: (String, Boolean) -> Unit, onSetting
                                 },
                             )
                         }
+                    }
+                    // Today, Upcoming and Notes stay composed once visited, so switching tabs is a crossfade
+                    // of pages that already exist (no grid re-measure, no image reloads). Other views animate in.
+                    val mainKey = if (query == null && view in MAIN_VIEWS) view else null
+                    var visited by remember { mutableStateOf(setOf<String>()) }
+                    if (mainKey != null && mainKey !in visited) visited = visited + mainKey
+                    Box(Modifier.fillMaxSize()) {
+                        MAIN_VIEWS.forEach { v ->
+                            if (v in visited) key(v) {
+                                val active = v == mainKey
+                                val a by animateFloatAsState(if (active) 1f else 0f, Motion.medium(), label = "page")
+                                Box(
+                                    Modifier.fillMaxSize().zIndex(if (active) 1f else 0f)
+                                        // ModulateAlpha: no offscreen buffer for the fading page.
+                                        .graphicsLayer { alpha = a; compositingStrategy = androidx.compose.ui.graphics.CompositingStrategy.ModulateAlpha }
+                                        // Faded-out pages stay composed but aren't drawn at all.
+                                        .drawWithContent { if (a > 0f) drawContent() }
+                                        .then(if (active) Modifier else Modifier.clearAndSetSemantics { }),
+                                ) {
+                                    // Only the active page joins the card↔editor transition: the same item on two
+                                    // pages would be two matches for one shared key, which never settles.
+                                    val shared = LocalSharedScope.current
+                                    androidx.compose.runtime.CompositionLocalProvider(LocalSharedScope provides if (active) shared else null) {
+                                        renderPage(ContentKey(v, null, false, false))
+                                    }
+                                    if (!active) Box(Modifier.matchParentSize().pointerInput(Unit) {
+                                        awaitPointerEventScope { while (true) awaitPointerEvent(PointerEventPass.Initial).changes.forEach { it.consume() } }
+                                    })
+                                }
+                            }
+                        }
+                        if (mainKey == null) AnimatedContent(
+                            targetState = ContentKey(view, label, query != null, empty),
+                            transitionSpec = { fadeIn(Motion.medium()) togetherWith fadeOut(Motion.fast()) },
+                            modifier = Modifier.zIndex(2f),
+                            label = "content",
+                        ) { key -> renderPage(key) }
                     }
                 }
             }
@@ -971,7 +1013,7 @@ private fun GridContent(
                     )
                 }
             }
-            items(s.items.size, key = { s.items[it].id }) { i ->
+            items(s.items.size, key = { s.items[it].id }, contentType = { if (s.items[it].images.isNotEmpty()) "image-card" else "card" }) { i ->
                 val item = s.items[i]
                 Box(Modifier.animateItem()) {
                     NoteCard(

@@ -110,25 +110,23 @@ fun AttachmentImage(
 ) {
     val ctx = LocalContext.current
     var attempt by remember(ref.id) { mutableIntStateOf(0) }
-    key(ref.id, attempt) {
-        val request = remember(ref.id, attempt) {
-            ImageRequest.Builder(ctx).data(imageModel(ctx, ref, width)).build()
-        }
-        SubcomposeAsyncImage(
+    var failed by remember(ref.id) { mutableStateOf(false) }
+    // One request per image and attempt: same data + size keys every time, so a revisit hits the memory cache.
+    val request = remember(ref.id, width, attempt) {
+        ImageRequest.Builder(ctx).data(imageModel(ctx, ref, width)).memoryCacheKey("${ref.id}@$width").build()
+    }
+    Box(modifier.background(MaterialTheme.colorScheme.surfaceContainerHighest)) {
+        // Plain AsyncImage: no subcomposition per image, unlike SubcomposeAsyncImage.
+        coil3.compose.AsyncImage(
             model = request,
             contentDescription = null,
             contentScale = contentScale,
-            modifier = modifier,
-        ) {
-            val state by painter.state.collectAsState()
-            when (state) {
-                is AsyncImagePainter.State.Success -> SubcomposeAsyncImageContent()
-                is AsyncImagePainter.State.Error -> {
-                    ImagePlaceholder()
-                    LaunchedEffect(Unit) { delay(15_000L + attempt * 15_000L); attempt++ }
-                }
-                else -> ImagePlaceholder(loading = true)
-            }
+            modifier = Modifier.fillMaxSize(),
+            onState = { st -> failed = st is AsyncImagePainter.State.Error },
+        )
+        if (failed) {
+            Icon(Icons.Outlined.Image, null, Modifier.align(Alignment.Center), tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f))
+            LaunchedEffect(attempt) { delay(15_000L + attempt * 15_000L); attempt++ }
         }
     }
 }

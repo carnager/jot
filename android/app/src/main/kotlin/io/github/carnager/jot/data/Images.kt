@@ -30,11 +30,18 @@ object Images {
 
     private fun ext(mime: String) = if (mime == "image/gif") "gif" else "jpg"
 
+    /** id → local file (or a miss), so composition never stats files on the main thread twice. */
+    private val located = java.util.concurrent.ConcurrentHashMap<String, java.util.Optional<File>>()
+
     /** The local file for [ref], pending or uploaded, if this device has it. */
     fun localFile(context: Context, id: String): File? =
-        sequenceOf(pendingDir(context), keptDir(context))
-            .flatMap { d -> sequenceOf(File(d, "$id.jpg"), File(d, "$id.gif")) }
-            .firstOrNull { it.isFile }
+        located.getOrPut(id) {
+            java.util.Optional.ofNullable(
+                sequenceOf(pendingDir(context), keptDir(context))
+                    .flatMap { d -> sequenceOf(File(d, "$id.jpg"), File(d, "$id.gif")) }
+                    .firstOrNull { it.isFile },
+            )
+        }.orElse(null)?.takeIf { it.isFile }
 
     fun isPending(context: Context, id: String) =
         File(pendingDir(context), "$id.jpg").isFile || File(pendingDir(context), "$id.gif").isFile
@@ -43,7 +50,8 @@ object Images {
 
     fun markUploaded(context: Context, file: File) {
         val target = File(keptDir(context), file.name)
-        if (!file.renameTo(target)) file.delete()
+        if (file.renameTo(target)) located[file.nameWithoutExtension] = java.util.Optional.of(target)
+        else { file.delete(); located.remove(file.nameWithoutExtension) }
     }
 
     /** Long edge at most [max]; never upscales. */
@@ -67,6 +75,7 @@ object Images {
                 context.contentResolver.openInputStream(uri)!!.use { input -> out.outputStream().use { input.copyTo(it) } }
                 val o = BitmapFactory.Options().apply { inJustDecodeBounds = true }
                 BitmapFactory.decodeFile(out.path, o)
+                located[id] = java.util.Optional.of(out)
                 return@withContext ImageRef(id, o.outWidth, o.outHeight, "image/gif")
             }
             val source = ImageDecoder.createSource(context.contentResolver, uri)
@@ -84,6 +93,7 @@ object Images {
             } else bitmap
             val out = File(pendingDir(context), "$id.jpg")
             out.outputStream().use { flat.compress(Bitmap.CompressFormat.JPEG, QUALITY, it) }
+            located[id] = java.util.Optional.of(out)
             ImageRef(id, flat.width, flat.height, "image/jpeg")
         } catch (e: Exception) {
             Log.w(TAG, "import failed for $uri", e)
