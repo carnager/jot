@@ -115,6 +115,7 @@ type artItem struct {
 	} `json:"checks"`
 	Images    []json.RawMessage `json:"images"`
 	CreatedAt int64             `json:"createdAt"`
+	UpdatedAt int64             `json:"updatedAt"`
 	Archived  bool              `json:"archived"`
 	Done      bool              `json:"done"`
 	TrashedAt int64             `json:"trashedAt"`
@@ -158,11 +159,16 @@ func (a *Artist) Notice(userID int64, changes []json.RawMessage) {
 		if len(it.Images) > 0 || it.Deleted || it.TrashedAt > 0 || it.Archived || it.Done || !it.hasText() {
 			continue
 		}
-		// Every change while it waits pushes the start back, so a note still being typed is painted once
-		// it settles. Notes that had their turn already (done, skipped, removed) are left alone.
+		// A note sent from the capture line is saved in one go (updatedAt ≈ createdAt) and complete, so it's
+		// painted right away. One typed into the editor after it was created waits until it settles: every
+		// change while it waits pushes the start back. Notes that had their turn (done, skipped, removed) are left alone.
+		start := now.Add(a.cfg.delay)
+		if it.UpdatedAt-it.CreatedAt < 1000 {
+			start = now
+		}
 		res, err := a.store.db.Exec(`INSERT INTO art (user_id, item_id, state, not_before) VALUES (?, ?, 'pending', ?)
 			ON CONFLICT (user_id, item_id) DO UPDATE SET not_before = excluded.not_before WHERE art.state = 'pending' AND art.forced = 0`,
-			userID, meta.ID, now.Add(a.cfg.delay).UnixMilli())
+			userID, meta.ID, start.UnixMilli())
 		if err != nil {
 			log.Printf("art: queue: %v", err)
 			continue

@@ -139,11 +139,21 @@ func TestArtWaitsForTypingToSettle(t *testing.T) {
 	a, uid, prompts := testArtist(t, true)
 	a.cfg.delay = time.Hour
 	now := time.Now().UnixMilli()
-	syncItem(t, a, uid, map[string]any{"id": "n1", "title": "Schw", "createdAt": now, "updatedAt": now})
+	// Sent from the capture line: complete, so it starts at once.
+	syncItem(t, a, uid, map[string]any{"id": "c1", "title": "Zahnarzt", "createdAt": now, "updatedAt": now + 3})
+	var captured int64
+	a.store.db.QueryRow(`SELECT not_before FROM art WHERE item_id = 'c1'`).Scan(&captured)
+	if captured > time.Now().UnixMilli() {
+		t.Fatalf("a captured note waits until %d", captured)
+	}
+	a.store.db.Exec(`DELETE FROM art`)
+
+	// Typed into the editor: waits, and every edit pushes the start back.
+	syncItem(t, a, uid, map[string]any{"id": "n1", "title": "Schw", "createdAt": now - 2000, "updatedAt": now})
 	var first int64
 	a.store.db.QueryRow(`SELECT not_before FROM art WHERE item_id = 'n1'`).Scan(&first)
 	time.Sleep(5 * time.Millisecond)
-	syncItem(t, a, uid, map[string]any{"id": "n1", "title": "Schwimmen Daria", "createdAt": now, "updatedAt": now + 1})
+	syncItem(t, a, uid, map[string]any{"id": "n1", "title": "Schwimmen Daria", "createdAt": now - 2000, "updatedAt": now + 1})
 	var second int64
 	a.store.db.QueryRow(`SELECT not_before FROM art WHERE item_id = 'n1'`).Scan(&second)
 	if second <= first {

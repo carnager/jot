@@ -307,8 +307,9 @@ The picture is a normal attachment (id `art-…`) that the server adds to the it
 (it sets `fm.images` and `updatedAt`), so clients need nothing special to show it.
 - `GET /api/settings` includes `"artAvailable": true|false` (server-owned, never stored). The user's choices live in
   `"art": { "auto": false, "style": "" }`.
-- `art.auto`: when a new item without images and with some text has been quiet for 4 s (each synced edit restarts the wait),
-  the server paints one. Only
+- `art.auto`: the server paints a picture for a new item without images and with some text. One sent from the capture line
+  (`updatedAt - createdAt` < 1 s) starts at once. One typed into the editor after it was created waits until it has been quiet for 4 s
+  (each synced edit restarts the wait). Only
   items created after auto was turned on (`artEnabledAt`, server-owned) and within the last 24 h count. Each item gets **one**
   automatic attempt, so a removed picture stays removed. If the user added an image in the meantime, the picture is dropped.
 - `art.style`: the look of every picture (default: a cheerful flat vector illustration). The prompt always adds "no text in the image".
