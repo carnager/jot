@@ -493,7 +493,13 @@ func (a *Artist) choose(ctx context.Context, cast []artCharacter, it artItem) ([
 	}
 	sys.WriteString("\nFor the note you get, choose the characters that fit it best: usually one, several or all of them only " +
 		"when the note is about something done together or the characters' descriptions call for it. Then describe, in English, " +
-		"in one to three sentences, a concrete scene with them doing what the note is about. The note may be in German or English. " +
+		"in one to three sentences, a distinctive scene that makes this particular note recognizable. " +
+		"Start with the note's subject and its most distinctive action or object, then choose a fitting setting, pose, " +
+		"camera angle and lighting. For digital or abstract tasks, a playful visual metaphor is welcome: " +
+		"music can become a listening scene with records and sound waves; a network repair can become reconnecting a broken bridge. " +
+		"Do not default to a character sitting at a desk using a laptop for every work or computer task. " +
+		"Keep the scene simple enough to read on a small card. Character descriptions guide identity and casting, " +
+		"not a fixed inventory of props or a fixed location. The note may be in German or English. " +
 		`Answer with JSON only: {"characters": ["Name", ...], "scene": "..."}`)
 	body, _ := json.Marshal(map[string]any{
 		"model": a.cfg.textModel,
@@ -547,13 +553,20 @@ func artPrompt(style string, it artItem, cast []artCharacter, scene string) stri
 	if len(cast) > 0 {
 		// The references lead: they're the look to match. The style only sets the scene's mood.
 		b.WriteString("The reference images show recurring characters from one animated film. Draw them so they are " +
-			"unmistakably the same characters: the same rendering (3D or 2D, textures such as fur and fabric, shading, lighting " +
+			"unmistakably the same characters: the same rendering (3D or 2D, textures such as fur and fabric, shading " +
 			"and level of detail), the same proportions, faces, eyes, colors, patterns and clothing. Copy their look, don't " +
-			"reinterpret or simplify it. Put them in a new scene and don't copy the reference backgrounds.\n")
+			"reinterpret or simplify it. The references establish character identity only: invent a fresh pose, expression, " +
+			"camera angle, setting and scene lighting suited to the note. Do not copy the reference composition, " +
+			"backgrounds, furniture or incidental objects. Do not include companions or toys from a reference " +
+			"unless the scene or character description explicitly calls for them.\n")
 	}
 	b.WriteString(style)
 	b.WriteString(" It decorates a card in a personal notes app and should show at a glance what the note is about. " +
-		"The note may be in German or English. Depict the scene, activity or objects it is about. " +
+		"The note may be in German or English. Build the composition around its distinctive activity or objects, " +
+		"using a playful visual metaphor when useful for an abstract or digital task. " +
+		"Avoid a generic desk-and-laptop scene unless that setting is essential to the note. " +
+		"Choose a purposeful viewpoint, palette and lighting that suit this subject and the requested style. " +
+		"Use one clear focal action and a few meaningful props, readable at thumbnail size. " +
 		"Do not put any text, letters, numbers or words in the image. No borders, frames or user interface.\n\n")
 	if len(cast) > 0 {
 		for i, c := range cast {
